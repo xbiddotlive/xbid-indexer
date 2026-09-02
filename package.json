@@ -1,0 +1,23 @@
+{
+  "name": "@xbid/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "ponder dev --port 42069",
+    "build": "ponder codegen",
+    "start": "ponder start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "4.13.5",
+    "pg": "8.23.0",
+    "ponder": "0.17.8",
+    "viem": "2.56.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "5.9.3"
+  }
+}

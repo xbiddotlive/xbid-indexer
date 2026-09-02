@@ -16,4 +16,4 @@ broadcast/
 *.log
 *.swp
 *.tmp
-
+*.tsbuildinfo
