@@ -28,6 +28,12 @@ type Query {
   marketStatess(where: marketStatesFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): marketStatesPage!
   trades(transactionHash: String!, logIndex: Float!): trades
   tradess(where: tradesFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): tradesPage!
+  feeAccruals(transactionHash: String!, logIndex: Float!): feeAccruals
+  feeAccrualss(where: feeAccrualsFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): feeAccrualsPage!
+  feeClaims(transactionHash: String!, logIndex: Float!): feeClaims
+  feeClaimss(where: feeClaimsFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): feeClaimsPage!
+  crownEvents(transactionHash: String!, logIndex: Float!): crownEvents
+  crownEventss(where: crownEventsFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): crownEventsPage!
   _meta: Meta
 }
 
@@ -436,6 +442,339 @@ input tradesFilter {
   reserveAfterUnits_lt: BigInt
   reserveAfterUnits_gte: BigInt
   reserveAfterUnits_lte: BigInt
+  blockNumber: BigInt
+  blockNumber_not: BigInt
+  blockNumber_in: [BigInt]
+  blockNumber_not_in: [BigInt]
+  blockNumber_gt: BigInt
+  blockNumber_lt: BigInt
+  blockNumber_gte: BigInt
+  blockNumber_lte: BigInt
+  blockTimestamp: BigInt
+  blockTimestamp_not: BigInt
+  blockTimestamp_in: [BigInt]
+  blockTimestamp_not_in: [BigInt]
+  blockTimestamp_gt: BigInt
+  blockTimestamp_lt: BigInt
+  blockTimestamp_gte: BigInt
+  blockTimestamp_lte: BigInt
+}
+
+type feeAccruals {
+  transactionHash: String!
+  logIndex: Int!
+  contestId: String!
+  marketVault: String!
+  creator: String!
+  referrer: String!
+  feeUnits: BigInt!
+  protocolUnits: BigInt!
+  creatorUnits: BigInt!
+  referrerUnits: BigInt!
+  splitVersion: Int!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+}
+
+type feeAccrualsPage {
+  items: [feeAccruals!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input feeAccrualsFilter {
+  AND: [feeAccrualsFilter]
+  OR: [feeAccrualsFilter]
+  transactionHash: String
+  transactionHash_not: String
+  transactionHash_in: [String]
+  transactionHash_not_in: [String]
+  transactionHash_contains: String
+  transactionHash_not_contains: String
+  transactionHash_starts_with: String
+  transactionHash_ends_with: String
+  transactionHash_not_starts_with: String
+  transactionHash_not_ends_with: String
+  logIndex: Int
+  logIndex_not: Int
+  logIndex_in: [Int]
+  logIndex_not_in: [Int]
+  logIndex_gt: Int
+  logIndex_lt: Int
+  logIndex_gte: Int
+  logIndex_lte: Int
+  contestId: String
+  contestId_not: String
+  contestId_in: [String]
+  contestId_not_in: [String]
+  contestId_contains: String
+  contestId_not_contains: String
+  contestId_starts_with: String
+  contestId_ends_with: String
+  contestId_not_starts_with: String
+  contestId_not_ends_with: String
+  marketVault: String
+  marketVault_not: String
+  marketVault_in: [String]
+  marketVault_not_in: [String]
+  marketVault_contains: String
+  marketVault_not_contains: String
+  marketVault_starts_with: String
+  marketVault_ends_with: String
+  marketVault_not_starts_with: String
+  marketVault_not_ends_with: String
+  creator: String
+  creator_not: String
+  creator_in: [String]
+  creator_not_in: [String]
+  creator_contains: String
+  creator_not_contains: String
+  creator_starts_with: String
+  creator_ends_with: String
+  creator_not_starts_with: String
+  creator_not_ends_with: String
+  referrer: String
+  referrer_not: String
+  referrer_in: [String]
+  referrer_not_in: [String]
+  referrer_contains: String
+  referrer_not_contains: String
+  referrer_starts_with: String
+  referrer_ends_with: String
+  referrer_not_starts_with: String
+  referrer_not_ends_with: String
+  feeUnits: BigInt
+  feeUnits_not: BigInt
+  feeUnits_in: [BigInt]
+  feeUnits_not_in: [BigInt]
+  feeUnits_gt: BigInt
+  feeUnits_lt: BigInt
+  feeUnits_gte: BigInt
+  feeUnits_lte: BigInt
+  protocolUnits: BigInt
+  protocolUnits_not: BigInt
+  protocolUnits_in: [BigInt]
+  protocolUnits_not_in: [BigInt]
+  protocolUnits_gt: BigInt
+  protocolUnits_lt: BigInt
+  protocolUnits_gte: BigInt
+  protocolUnits_lte: BigInt
+  creatorUnits: BigInt
+  creatorUnits_not: BigInt
+  creatorUnits_in: [BigInt]
+  creatorUnits_not_in: [BigInt]
+  creatorUnits_gt: BigInt
+  creatorUnits_lt: BigInt
+  creatorUnits_gte: BigInt
+  creatorUnits_lte: BigInt
+  referrerUnits: BigInt
+  referrerUnits_not: BigInt
+  referrerUnits_in: [BigInt]
+  referrerUnits_not_in: [BigInt]
+  referrerUnits_gt: BigInt
+  referrerUnits_lt: BigInt
+  referrerUnits_gte: BigInt
+  referrerUnits_lte: BigInt
+  splitVersion: Int
+  splitVersion_not: Int
+  splitVersion_in: [Int]
+  splitVersion_not_in: [Int]
+  splitVersion_gt: Int
+  splitVersion_lt: Int
+  splitVersion_gte: Int
+  splitVersion_lte: Int
+  blockNumber: BigInt
+  blockNumber_not: BigInt
+  blockNumber_in: [BigInt]
+  blockNumber_not_in: [BigInt]
+  blockNumber_gt: BigInt
+  blockNumber_lt: BigInt
+  blockNumber_gte: BigInt
+  blockNumber_lte: BigInt
+  blockTimestamp: BigInt
+  blockTimestamp_not: BigInt
+  blockTimestamp_in: [BigInt]
+  blockTimestamp_not_in: [BigInt]
+  blockTimestamp_gt: BigInt
+  blockTimestamp_lt: BigInt
+  blockTimestamp_gte: BigInt
+  blockTimestamp_lte: BigInt
+}
+
+type feeClaims {
+  transactionHash: String!
+  logIndex: Int!
+  account: String!
+  caller: String!
+  amountUnits: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+}
+
+type feeClaimsPage {
+  items: [feeClaims!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input feeClaimsFilter {
+  AND: [feeClaimsFilter]
+  OR: [feeClaimsFilter]
+  transactionHash: String
+  transactionHash_not: String
+  transactionHash_in: [String]
+  transactionHash_not_in: [String]
+  transactionHash_contains: String
+  transactionHash_not_contains: String
+  transactionHash_starts_with: String
+  transactionHash_ends_with: String
+  transactionHash_not_starts_with: String
+  transactionHash_not_ends_with: String
+  logIndex: Int
+  logIndex_not: Int
+  logIndex_in: [Int]
+  logIndex_not_in: [Int]
+  logIndex_gt: Int
+  logIndex_lt: Int
+  logIndex_gte: Int
+  logIndex_lte: Int
+  account: String
+  account_not: String
+  account_in: [String]
+  account_not_in: [String]
+  account_contains: String
+  account_not_contains: String
+  account_starts_with: String
+  account_ends_with: String
+  account_not_starts_with: String
+  account_not_ends_with: String
+  caller: String
+  caller_not: String
+  caller_in: [String]
+  caller_not_in: [String]
+  caller_contains: String
+  caller_not_contains: String
+  caller_starts_with: String
+  caller_ends_with: String
+  caller_not_starts_with: String
+  caller_not_ends_with: String
+  amountUnits: BigInt
+  amountUnits_not: BigInt
+  amountUnits_in: [BigInt]
+  amountUnits_not_in: [BigInt]
+  amountUnits_gt: BigInt
+  amountUnits_lt: BigInt
+  amountUnits_gte: BigInt
+  amountUnits_lte: BigInt
+  blockNumber: BigInt
+  blockNumber_not: BigInt
+  blockNumber_in: [BigInt]
+  blockNumber_not_in: [BigInt]
+  blockNumber_gt: BigInt
+  blockNumber_lt: BigInt
+  blockNumber_gte: BigInt
+  blockNumber_lte: BigInt
+  blockTimestamp: BigInt
+  blockTimestamp_not: BigInt
+  blockTimestamp_in: [BigInt]
+  blockTimestamp_not_in: [BigInt]
+  blockTimestamp_gt: BigInt
+  blockTimestamp_lt: BigInt
+  blockTimestamp_gte: BigInt
+  blockTimestamp_lte: BigInt
+}
+
+type crownEvents {
+  transactionHash: String!
+  logIndex: Int!
+  contestId: String!
+  marketVault: String!
+  kind: String!
+  side: Int
+  previousSide: Int
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+}
+
+type crownEventsPage {
+  items: [crownEvents!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input crownEventsFilter {
+  AND: [crownEventsFilter]
+  OR: [crownEventsFilter]
+  transactionHash: String
+  transactionHash_not: String
+  transactionHash_in: [String]
+  transactionHash_not_in: [String]
+  transactionHash_contains: String
+  transactionHash_not_contains: String
+  transactionHash_starts_with: String
+  transactionHash_ends_with: String
+  transactionHash_not_starts_with: String
+  transactionHash_not_ends_with: String
+  logIndex: Int
+  logIndex_not: Int
+  logIndex_in: [Int]
+  logIndex_not_in: [Int]
+  logIndex_gt: Int
+  logIndex_lt: Int
+  logIndex_gte: Int
+  logIndex_lte: Int
+  contestId: String
+  contestId_not: String
+  contestId_in: [String]
+  contestId_not_in: [String]
+  contestId_contains: String
+  contestId_not_contains: String
+  contestId_starts_with: String
+  contestId_ends_with: String
+  contestId_not_starts_with: String
+  contestId_not_ends_with: String
+  marketVault: String
+  marketVault_not: String
+  marketVault_in: [String]
+  marketVault_not_in: [String]
+  marketVault_contains: String
+  marketVault_not_contains: String
+  marketVault_starts_with: String
+  marketVault_ends_with: String
+  marketVault_not_starts_with: String
+  marketVault_not_ends_with: String
+  kind: String
+  kind_not: String
+  kind_in: [String]
+  kind_not_in: [String]
+  kind_contains: String
+  kind_not_contains: String
+  kind_starts_with: String
+  kind_ends_with: String
+  kind_not_starts_with: String
+  kind_not_ends_with: String
+  kind_contains_nocase: String
+  kind_not_contains_nocase: String
+  kind_starts_with_nocase: String
+  kind_ends_with_nocase: String
+  kind_not_starts_with_nocase: String
+  kind_not_ends_with_nocase: String
+  side: Int
+  side_not: Int
+  side_in: [Int]
+  side_not_in: [Int]
+  side_gt: Int
+  side_lt: Int
+  side_gte: Int
+  side_lte: Int
+  previousSide: Int
+  previousSide_not: Int
+  previousSide_in: [Int]
+  previousSide_not_in: [Int]
+  previousSide_gt: Int
+  previousSide_lt: Int
+  previousSide_gte: Int
+  previousSide_lte: Int
   blockNumber: BigInt
   blockNumber_not: BigInt
   blockNumber_in: [BigInt]

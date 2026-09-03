@@ -62,3 +62,64 @@ export const trades = onchainTable(
     traderIndex: index().on(table.trader, table.blockNumber),
   }),
 );
+
+export const feeAccruals = onchainTable(
+  "fee_accruals",
+  (t) => ({
+    transactionHash: t.hex().notNull(),
+    logIndex: t.integer().notNull(),
+    contestId: t.hex().notNull(),
+    marketVault: t.hex().notNull(),
+    creator: t.hex().notNull(),
+    referrer: t.hex().notNull(),
+    feeUnits: t.bigint().notNull(),
+    protocolUnits: t.bigint().notNull(),
+    creatorUnits: t.bigint().notNull(),
+    referrerUnits: t.bigint().notNull(),
+    splitVersion: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTimestamp: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.transactionHash, table.logIndex] }),
+    creatorIndex: index().on(table.creator, table.blockNumber),
+    referrerIndex: index().on(table.referrer, table.blockNumber),
+    contestIndex: index().on(table.contestId, table.blockNumber),
+  }),
+);
+
+export const feeClaims = onchainTable(
+  "fee_claims",
+  (t) => ({
+    transactionHash: t.hex().notNull(),
+    logIndex: t.integer().notNull(),
+    account: t.hex().notNull(),
+    caller: t.hex().notNull(),
+    amountUnits: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTimestamp: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.transactionHash, table.logIndex] }),
+    accountIndex: index().on(table.account, table.blockNumber),
+  }),
+);
+
+export const crownEvents = onchainTable(
+  "crown_events",
+  (t) => ({
+    transactionHash: t.hex().notNull(),
+    logIndex: t.integer().notNull(),
+    contestId: t.hex().notNull(),
+    marketVault: t.hex().notNull(),
+    kind: t.text().notNull(),
+    side: t.integer(),
+    previousSide: t.integer(),
+    blockNumber: t.bigint().notNull(),
+    blockTimestamp: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.transactionHash, table.logIndex] }),
+    contestIndex: index().on(table.contestId, table.blockNumber),
+  }),
+);

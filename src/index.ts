@@ -1,5 +1,35 @@
 import { ponder } from "ponder:registry";
-import { contests, marketStates, trades } from "ponder:schema";
+import { contests, crownEvents, feeAccruals, feeClaims, marketStates, trades } from "ponder:schema";
+
+ponder.on("FeeVault:TradingFeeAccrued", async ({ event, context }) => {
+  await context.db.insert(feeAccruals).values({
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    contestId: event.args.contestId,
+    marketVault: event.args.marketVault,
+    creator: event.args.creator,
+    referrer: event.args.referrer,
+    feeUnits: event.args.feeUnits,
+    protocolUnits: event.args.protocolUnits,
+    creatorUnits: event.args.creatorUnits,
+    referrerUnits: event.args.referrerUnits,
+    splitVersion: event.args.feeSplitVersion,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  });
+});
+
+ponder.on("FeeVault:AccountFeesClaimed", async ({ event, context }) => {
+  await context.db.insert(feeClaims).values({
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    account: event.args.account,
+    caller: event.args.caller,
+    amountUnits: event.args.amountUnits,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  });
+});
 
 ponder.on("MarketRegistry:ContestRegistered", async ({ event, context }) => {
   await context.db
@@ -129,6 +159,17 @@ ponder.on("MarketVault:Flipped", async ({ event, context }) => {
 });
 
 ponder.on("MarketVault:CrownActivated", async ({ event, context }) => {
+  await context.db.insert(crownEvents).values({
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    contestId: event.args.contestId,
+    marketVault: event.log.address,
+    kind: "ACTIVATED",
+    side: null,
+    previousSide: null,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  });
   await context.db
     .update(marketStates, { marketVault: event.log.address })
     .set({
@@ -142,6 +183,17 @@ ponder.on("MarketVault:CrownActivated", async ({ event, context }) => {
 });
 
 ponder.on("MarketVault:CrownAssigned", async ({ event, context }) => {
+  await context.db.insert(crownEvents).values({
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    contestId: event.args.contestId,
+    marketVault: event.log.address,
+    kind: "ASSIGNED",
+    side: event.args.crownSide,
+    previousSide: null,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  });
   await context.db
     .update(marketStates, { marketVault: event.log.address })
     .set({
@@ -154,6 +206,17 @@ ponder.on("MarketVault:CrownAssigned", async ({ event, context }) => {
 });
 
 ponder.on("MarketVault:CrownTransferred", async ({ event, context }) => {
+  await context.db.insert(crownEvents).values({
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    contestId: event.args.contestId,
+    marketVault: event.log.address,
+    kind: "TRANSFERRED",
+    side: event.args.newCrownSide,
+    previousSide: event.args.previousCrownSide,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  });
   await context.db
     .update(marketStates, { marketVault: event.log.address })
     .set({

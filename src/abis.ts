@@ -12,3 +12,8 @@ export const marketVaultAbi = parseAbi([
   "event CrownAssigned(bytes32 indexed contestId, uint8 indexed crownSide, uint256 qAWei, uint256 qBWei)",
   "event CrownTransferred(bytes32 indexed contestId, uint8 indexed previousCrownSide, uint8 indexed newCrownSide)",
 ]);
+
+export const feeVaultAbi = parseAbi([
+  "event TradingFeeAccrued(bytes32 indexed contestId, address indexed marketVault, address indexed creator, address referrer, uint256 feeUnits, uint256 protocolUnits, uint256 creatorUnits, uint256 referrerUnits, uint32 feeSplitVersion)",
+  "event AccountFeesClaimed(address indexed account, address indexed caller, uint256 amountUnits)",
+]);
