@@ -3,15 +3,17 @@ import { parseAbiItem } from "viem";
 
 import { feeVaultAbi, marketRegistryAbi, marketVaultAbi } from "./src/abis";
 
-const registry = "0x0B68fD82965Fd853907CA4E2f7E6E6d478Aaef8b";
-const feeVault = "0x82D9159cB488175cAcdcD145A7285d80563e69d0";
-const deploymentStartBlock = 111_163_164;
+const chainId = Number(process.env.PONDER_CHAIN_ID ?? "46630");
+const registry = (process.env.PONDER_REGISTRY_ADDRESS ?? "0x0B68fD82965Fd853907CA4E2f7E6E6d478Aaef8b") as `0x${string}`;
+const feeVault = (process.env.PONDER_FEE_VAULT_ADDRESS ?? "0x82D9159cB488175cAcdcD145A7285d80563e69d0") as `0x${string}`;
+const deploymentStartBlock = Number(process.env.PONDER_START_BLOCK ?? "111163164");
 
 export default createConfig({
   chains: {
     robinhoodTestnet: {
-      id: 46_630,
+      id: chainId,
       rpc:
+        process.env.PONDER_RPC_URL ??
         process.env.PONDER_RPC_URL_46630 ??
         "https://rpc.testnet.chain.robinhood.com",
     },
