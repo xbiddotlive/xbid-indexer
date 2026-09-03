@@ -1,7 +1,7 @@
 import { createConfig, factory } from "ponder";
 import { parseAbiItem } from "viem";
 
-import { feeVaultAbi, marketRegistryAbi, marketVaultAbi } from "./src/abis";
+import { feeVaultAbi, marketRegistryAbi, marketVaultAbi, sideTokenAbi } from "./src/abis";
 
 const chainId = Number(process.env.PONDER_CHAIN_ID ?? "46630");
 const registry = (process.env.PONDER_REGISTRY_ADDRESS ?? "0x0B68fD82965Fd853907CA4E2f7E6E6d478Aaef8b") as `0x${string}`;
@@ -43,6 +43,30 @@ export default createConfig({
       }),
       startBlock: deploymentStartBlock,
       includeTransactionReceipts: true,
+    },
+    SideAToken: {
+      abi: sideTokenAbi,
+      chain: "robinhoodTestnet",
+      address: factory({
+        address: registry,
+        event: parseAbiItem(
+          "event ContestRegistered(uint256 indexed chainId, bytes32 indexed contestId, address indexed marketVault, address creator, address sideAToken, address sideBToken, uint32 versionId, bytes32 metadataHash)",
+        ),
+        parameter: "sideAToken",
+      }),
+      startBlock: deploymentStartBlock,
+    },
+    SideBToken: {
+      abi: sideTokenAbi,
+      chain: "robinhoodTestnet",
+      address: factory({
+        address: registry,
+        event: parseAbiItem(
+          "event ContestRegistered(uint256 indexed chainId, bytes32 indexed contestId, address indexed marketVault, address creator, address sideAToken, address sideBToken, uint32 versionId, bytes32 metadataHash)",
+        ),
+        parameter: "sideBToken",
+      }),
+      startBlock: deploymentStartBlock,
     },
   },
 });

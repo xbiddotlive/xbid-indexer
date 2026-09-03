@@ -1,5 +1,101 @@
 import { ponder } from "ponder:registry";
-import { contests, crownEvents, feeAccruals, feeClaims, marketStates, trades } from "ponder:schema";
+import { contests, crownEvents, feeAccruals, feeClaims, marketStates, sideTokenBalances, traderMarketCosts, traderPerformance, trades } from "ponder:schema";
+import { applyPerformanceTrade } from "./trader-performance";
+
+const publicMetricsStartBlock = BigInt(process.env.PUBLIC_METRICS_START_BLOCK ?? process.env.LEADERBOARD_START_BLOCK ?? "0");
+const zeroAddress = "0x0000000000000000000000000000000000000000";
+
+async function updateTokenBalance(
+  db: Parameters<Parameters<typeof ponder.on>[1]>[0]["context"]["db"],
+  token: `0x${string}`,
+  account: `0x${string}`,
+  delta: bigint,
+  blockNumber: bigint,
+) {
+  if (account.toLowerCase() === zeroAddress) return;
+  await db.insert(sideTokenBalances).values({
+    token,
+    account,
+    balanceWei: delta,
+    updatedBlock: blockNumber,
+  }).onConflictDoUpdate((row) => ({
+    balanceWei: row.balanceWei + delta,
+    updatedBlock: blockNumber,
+  }));
+}
+
+async function recordTransfer(event: {
+  args: { from: `0x${string}`; to: `0x${string}`; value: bigint };
+  block: { number: bigint };
+  log: { address: `0x${string}` };
+}, db: Parameters<Parameters<typeof ponder.on>[1]>[0]["context"]["db"]) {
+  await updateTokenBalance(db, event.log.address, event.args.from, -event.args.value, event.block.number);
+  await updateTokenBalance(db, event.log.address, event.args.to, event.args.value, event.block.number);
+}
+
+ponder.on("SideAToken:Transfer", async ({ event, context }) => recordTransfer(event, context.db));
+ponder.on("SideBToken:Transfer", async ({ event, context }) => recordTransfer(event, context.db));
+
+type TradeKind = "BUY" | "FLIP" | "SELL";
+
+async function updateTraderPerformance(
+  db: Parameters<Parameters<typeof ponder.on>[1]>[0]["context"]["db"],
+  input: {
+    blockNumber: bigint;
+    grossUnits: bigint;
+    inputWei: bigint;
+    kind: TradeKind;
+    marketVault: `0x${string}`;
+    outputWei: bigint;
+    side: number;
+    trader: `0x${string}`;
+  },
+) {
+  if (input.blockNumber < publicMetricsStartBlock) return;
+  const existing = await db.find(traderMarketCosts, { trader: input.trader, marketVault: input.marketVault });
+  const state = existing ?? {
+    trader: input.trader,
+    marketVault: input.marketVault,
+    qAWei: 0n,
+    qBWei: 0n,
+    costAUnits: 0n,
+    costBUnits: 0n,
+    updatedBlock: input.blockNumber,
+  };
+  const next = applyPerformanceTrade(state, input);
+  const { costAUnits, costBUnits, qAWei, qBWei, realizedCostUnits, realizedPnlUnits, sale } = next;
+
+  await db.insert(traderMarketCosts).values({
+    trader: input.trader,
+    marketVault: input.marketVault,
+    qAWei,
+    qBWei,
+    costAUnits,
+    costBUnits,
+    updatedBlock: input.blockNumber,
+  }).onConflictDoUpdate({ qAWei, qBWei, costAUnits, costBUnits, updatedBlock: input.blockNumber });
+
+  await db.insert(traderPerformance).values({
+    trader: input.trader,
+    realizedCostUnits,
+    realizedPnlUnits,
+    volumeUnits: input.grossUnits,
+    tradeCount: 1n,
+    winningSales: sale && realizedPnlUnits > 0n ? 1n : 0n,
+    sales: sale ? 1n : 0n,
+    currentStreak: sale && realizedPnlUnits > 0n ? 1n : 0n,
+    updatedBlock: input.blockNumber,
+  }).onConflictDoUpdate((row) => ({
+    realizedCostUnits: row.realizedCostUnits + realizedCostUnits,
+    realizedPnlUnits: row.realizedPnlUnits + realizedPnlUnits,
+    volumeUnits: row.volumeUnits + input.grossUnits,
+    tradeCount: row.tradeCount + 1n,
+    winningSales: row.winningSales + (sale && realizedPnlUnits > 0n ? 1n : 0n),
+    sales: row.sales + (sale ? 1n : 0n),
+    currentStreak: sale ? (realizedPnlUnits > 0n ? row.currentStreak + 1n : 0n) : row.currentStreak,
+    updatedBlock: input.blockNumber,
+  }));
+}
 
 ponder.on("FeeVault:TradingFeeAccrued", async ({ event, context }) => {
   await context.db.insert(feeAccruals).values({
@@ -60,6 +156,9 @@ ponder.on("MarketRegistry:ContestRegistered", async ({ event, context }) => {
       cumulativeVolumeUnits: 0n,
       cumulativeFeeUnits: 0n,
       tradeCount: 0n,
+      publicCumulativeVolumeUnits: 0n,
+      publicCumulativeFeeUnits: 0n,
+      publicTradeCount: 0n,
       crownSide: null,
       crownActivated: false,
       updatedBlock: event.block.number,
@@ -96,6 +195,16 @@ ponder.on("MarketVault:Bought", async ({ event, context }) => {
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
   });
+  await updateTraderPerformance(context.db, {
+    blockNumber: event.block.number,
+    grossUnits: event.args.grossInputUnits,
+    inputWei: event.args.grossInputUnits,
+    kind: "BUY",
+    marketVault: event.log.address,
+    outputWei: event.args.tokenOutputWei,
+    side: event.args.side,
+    trader: event.args.trader,
+  });
 });
 
 ponder.on("MarketVault:Sold", async ({ event, context }) => {
@@ -126,6 +235,16 @@ ponder.on("MarketVault:Sold", async ({ event, context }) => {
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
   });
+  await updateTraderPerformance(context.db, {
+    blockNumber: event.block.number,
+    grossUnits: event.args.grossOutputUnits,
+    inputWei: event.args.tokenInputWei,
+    kind: "SELL",
+    marketVault: event.log.address,
+    outputWei: event.args.netOutputUnits,
+    side: event.args.side,
+    trader: event.args.trader,
+  });
 });
 
 ponder.on("MarketVault:Flipped", async ({ event, context }) => {
@@ -155,6 +274,16 @@ ponder.on("MarketVault:Flipped", async ({ event, context }) => {
     feeUnits: event.args.feeUnits,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
+  });
+  await updateTraderPerformance(context.db, {
+    blockNumber: event.block.number,
+    grossUnits: event.args.sourceGrossOutputUnits,
+    inputWei: event.args.sourceTokenInputWei,
+    kind: "FLIP",
+    marketVault: event.log.address,
+    outputWei: event.args.destinationTokenOutputWei,
+    side: event.args.sourceSide,
+    trader: event.args.trader,
   });
 });
 
@@ -246,6 +375,15 @@ async function updateMarket(
     cumulativeVolumeUnits: row.cumulativeVolumeUnits + next.volumeUnits,
     cumulativeFeeUnits: row.cumulativeFeeUnits + next.feeUnits,
     tradeCount: row.tradeCount + 1n,
+    publicCumulativeVolumeUnits: next.blockNumber >= publicMetricsStartBlock
+      ? row.publicCumulativeVolumeUnits + next.volumeUnits
+      : row.publicCumulativeVolumeUnits,
+    publicCumulativeFeeUnits: next.blockNumber >= publicMetricsStartBlock
+      ? row.publicCumulativeFeeUnits + next.feeUnits
+      : row.publicCumulativeFeeUnits,
+    publicTradeCount: next.blockNumber >= publicMetricsStartBlock
+      ? row.publicTradeCount + 1n
+      : row.publicTradeCount,
     updatedBlock: next.blockNumber,
     updatedAt: next.blockTimestamp,
   }));

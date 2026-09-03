@@ -30,6 +30,9 @@ export const marketStates = onchainTable("market_states", (t) => ({
   cumulativeVolumeUnits: t.bigint().notNull(),
   cumulativeFeeUnits: t.bigint().notNull(),
   tradeCount: t.bigint().notNull(),
+  publicCumulativeVolumeUnits: t.bigint().notNull().default(0n),
+  publicCumulativeFeeUnits: t.bigint().notNull().default(0n),
+  publicTradeCount: t.bigint().notNull().default(0n),
   crownSide: t.integer(),
   crownActivated: t.boolean().notNull(),
   updatedBlock: t.bigint().notNull(),
@@ -60,6 +63,10 @@ export const trades = onchainTable(
     pk: primaryKey({ columns: [table.transactionHash, table.logIndex] }),
     contestTimeIndex: index().on(table.contestId, table.blockNumber),
     traderIndex: index().on(table.trader, table.blockNumber),
+    blockIndex: index().on(table.blockNumber, table.logIndex),
+    marketTimeIndex: index().on(table.marketVault, table.blockTimestamp),
+    contestMarketOrderIndex: index().on(table.contestId, table.marketVault, table.blockNumber, table.logIndex),
+    marketTraderOrderIndex: index().on(table.marketVault, table.trader, table.blockNumber, table.logIndex),
   }),
 );
 
@@ -121,5 +128,53 @@ export const crownEvents = onchainTable(
   (table) => ({
     pk: primaryKey({ columns: [table.transactionHash, table.logIndex] }),
     contestIndex: index().on(table.contestId, table.blockNumber),
+  }),
+);
+
+export const sideTokenBalances = onchainTable(
+  "side_token_balances",
+  (t) => ({
+    token: t.hex().notNull(),
+    account: t.hex().notNull(),
+    balanceWei: t.bigint().notNull(),
+    updatedBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.token, table.account] }),
+    accountBalanceIndex: index().on(table.account, table.balanceWei),
+  }),
+);
+
+export const traderMarketCosts = onchainTable(
+  "trader_market_costs",
+  (t) => ({
+    trader: t.hex().notNull(),
+    marketVault: t.hex().notNull(),
+    qAWei: t.bigint().notNull(),
+    qBWei: t.bigint().notNull(),
+    costAUnits: t.bigint().notNull(),
+    costBUnits: t.bigint().notNull(),
+    updatedBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.trader, table.marketVault] }),
+  }),
+);
+
+export const traderPerformance = onchainTable(
+  "trader_performance",
+  (t) => ({
+    trader: t.hex().primaryKey(),
+    realizedCostUnits: t.bigint().notNull(),
+    realizedPnlUnits: t.bigint().notNull(),
+    volumeUnits: t.bigint().notNull(),
+    tradeCount: t.bigint().notNull(),
+    winningSales: t.bigint().notNull(),
+    sales: t.bigint().notNull(),
+    currentStreak: t.bigint().notNull(),
+    updatedBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    rankingIndex: index().on(table.realizedPnlUnits, table.updatedBlock),
   }),
 );
