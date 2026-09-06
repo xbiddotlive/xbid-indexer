@@ -1,8 +1,9 @@
 import { ponder } from "ponder:registry";
 import { contests, crownEvents, feeAccruals, feeClaims, marketStates, sideTokenBalances, traderMarketCosts, traderPerformance, trades } from "ponder:schema";
 import { applyPerformanceTrade } from "./trader-performance";
+import { resolveIndexerEnvironment } from "./environment";
 
-const publicMetricsStartBlock = BigInt(process.env.PUBLIC_METRICS_START_BLOCK ?? process.env.LEADERBOARD_START_BLOCK ?? "0");
+const publicMetricsStartBlock = BigInt(resolveIndexerEnvironment().publicMetricsStartBlock);
 const zeroAddress = "0x0000000000000000000000000000000000000000";
 
 async function updateTokenBalance(
