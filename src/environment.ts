@@ -30,6 +30,15 @@ export function resolveIndexerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
 
   const chainId = Number(input.PONDER_CHAIN_ID ?? TESTNET.chainId);
+  if ((chainId === 84532 && environment !== "testnet") || (chainId === 8453 && environment !== "mainnet")) {
+    throw new Error("Base chain ID and XBID_ENVIRONMENT disagree.");
+  }
+  const otherTestnet = environment === "testnet" && chainId !== TESTNET.chainId;
+  if (otherTestnet) {
+    const required = ["PONDER_RPC_URL", "PONDER_REGISTRY_ADDRESS", "PONDER_FEE_VAULT_ADDRESS", "PONDER_START_BLOCK", "PUBLIC_METRICS_START_BLOCK"];
+    const missing = required.filter((key) => !input[key]);
+    if (missing.length) throw new Error(`non-Robinhood testnet indexer must explicitly set: ${missing.join(", ")}`);
+  }
   const rpcUrl = input.PONDER_RPC_URL
     ?? input.PONDER_RPC_URL_46630
     ?? TESTNET.rpcUrl;
@@ -37,6 +46,17 @@ export function resolveIndexerEnvironment(input: NodeJS.ProcessEnv = process.env
   const feeVault = input.PONDER_FEE_VAULT_ADDRESS ?? TESTNET.feeVault;
   const startBlock = Number(input.PONDER_START_BLOCK ?? TESTNET.startBlock);
   const publicMetricsStartBlock = Number(input.PUBLIC_METRICS_START_BLOCK ?? input.LEADERBOARD_START_BLOCK ?? 0);
+
+  if (otherTestnet) {
+    if (registry.toLowerCase() === TESTNET.registry.toLowerCase() || feeVault.toLowerCase() === TESTNET.feeVault.toLowerCase()
+      || registry.toLowerCase() === zeroAddress || feeVault.toLowerCase() === zeroAddress) {
+      throw new Error("non-Robinhood testnet indexer requires its own non-zero deployment addresses.");
+    }
+    if (URL.canParse(rpcUrl) && new URL(rpcUrl).hostname.replace(/\.$/, "") === new URL(TESTNET.rpcUrl).hostname) {
+      throw new Error("non-Robinhood testnet indexer cannot use the Robinhood RPC.");
+    }
+    if (publicMetricsStartBlock < startBlock) throw new Error("PUBLIC_METRICS_START_BLOCK cannot precede PONDER_START_BLOCK.");
+  }
 
   if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error("PONDER_CHAIN_ID must be a positive safe integer.");
   if (!Number.isSafeInteger(startBlock) || startBlock < 0) throw new Error("PONDER_START_BLOCK must be a non-negative safe integer.");

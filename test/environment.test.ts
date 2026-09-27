@@ -3,6 +3,24 @@ import test from "node:test";
 
 import { resolveIndexerEnvironment } from "../src/environment";
 
+const baseSepolia = {
+  XBID_ENVIRONMENT: "testnet", PONDER_CHAIN_ID: "84532", PONDER_RPC_URL: "https://sepolia.base.org",
+  PONDER_REGISTRY_ADDRESS: "0x1111111111111111111111111111111111111111",
+  PONDER_FEE_VAULT_ADDRESS: "0x2222222222222222222222222222222222222222",
+  PONDER_START_BLOCK: "100", PUBLIC_METRICS_START_BLOCK: "100",
+};
+
+test("Base Sepolia indexer requires an explicit, isolated deployment", () => {
+  assert.equal(resolveIndexerEnvironment(baseSepolia).chainId, 84532);
+  for (const key of ["PONDER_RPC_URL", "PONDER_REGISTRY_ADDRESS", "PONDER_FEE_VAULT_ADDRESS", "PONDER_START_BLOCK", "PUBLIC_METRICS_START_BLOCK"]) {
+    assert.throws(() => resolveIndexerEnvironment({ ...baseSepolia, [key]: undefined }), /explicitly set/);
+  }
+  assert.throws(() => resolveIndexerEnvironment({ ...baseSepolia, PONDER_REGISTRY_ADDRESS: "0x0B68fD82965Fd853907CA4E2f7E6E6d478Aaef8b" }), /own non-zero/);
+  assert.throws(() => resolveIndexerEnvironment({ ...baseSepolia, PONDER_RPC_URL: "https://rpc.testnet.chain.robinhood.com./" }), /Robinhood RPC/);
+  assert.throws(() => resolveIndexerEnvironment({ ...baseSepolia, PUBLIC_METRICS_START_BLOCK: "99" }), /cannot precede/);
+  assert.throws(() => resolveIndexerEnvironment({ ...baseSepolia, PONDER_CHAIN_ID: "8453" }), /Base chain ID/);
+});
+
 test("mainnet indexer rejects testnet URL variants and insecure transports", () => {
   const mainnet = {
     XBID_ENVIRONMENT: "mainnet", PONDER_CHAIN_ID: "4663",

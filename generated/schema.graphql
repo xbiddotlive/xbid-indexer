@@ -34,6 +34,12 @@ type Query {
   feeClaimss(where: feeClaimsFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): feeClaimsPage!
   crownEvents(transactionHash: String!, logIndex: Float!): crownEvents
   crownEventss(where: crownEventsFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): crownEventsPage!
+  sideTokenBalances(token: String!, account: String!): sideTokenBalances
+  sideTokenBalancess(where: sideTokenBalancesFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): sideTokenBalancesPage!
+  traderMarketCosts(trader: String!, marketVault: String!): traderMarketCosts
+  traderMarketCostss(where: traderMarketCostsFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): traderMarketCostsPage!
+  traderPerformance(trader: String!): traderPerformance
+  traderPerformances(where: traderPerformanceFilter, orderBy: String, orderDirection: String, before: String, after: String, limit: Int, offset: Int): traderPerformancePage!
   _meta: Meta
 }
 
@@ -173,6 +179,9 @@ type marketStates {
   cumulativeVolumeUnits: BigInt!
   cumulativeFeeUnits: BigInt!
   tradeCount: BigInt!
+  publicCumulativeVolumeUnits: BigInt!
+  publicCumulativeFeeUnits: BigInt!
+  publicTradeCount: BigInt!
   crownSide: Int
   crownActivated: Boolean!
   updatedBlock: BigInt!
@@ -256,6 +265,30 @@ input marketStatesFilter {
   tradeCount_lt: BigInt
   tradeCount_gte: BigInt
   tradeCount_lte: BigInt
+  publicCumulativeVolumeUnits: BigInt
+  publicCumulativeVolumeUnits_not: BigInt
+  publicCumulativeVolumeUnits_in: [BigInt]
+  publicCumulativeVolumeUnits_not_in: [BigInt]
+  publicCumulativeVolumeUnits_gt: BigInt
+  publicCumulativeVolumeUnits_lt: BigInt
+  publicCumulativeVolumeUnits_gte: BigInt
+  publicCumulativeVolumeUnits_lte: BigInt
+  publicCumulativeFeeUnits: BigInt
+  publicCumulativeFeeUnits_not: BigInt
+  publicCumulativeFeeUnits_in: [BigInt]
+  publicCumulativeFeeUnits_not_in: [BigInt]
+  publicCumulativeFeeUnits_gt: BigInt
+  publicCumulativeFeeUnits_lt: BigInt
+  publicCumulativeFeeUnits_gte: BigInt
+  publicCumulativeFeeUnits_lte: BigInt
+  publicTradeCount: BigInt
+  publicTradeCount_not: BigInt
+  publicTradeCount_in: [BigInt]
+  publicTradeCount_not_in: [BigInt]
+  publicTradeCount_gt: BigInt
+  publicTradeCount_lt: BigInt
+  publicTradeCount_gte: BigInt
+  publicTradeCount_lte: BigInt
   crownSide: Int
   crownSide_not: Int
   crownSide_in: [Int]
@@ -791,4 +824,236 @@ input crownEventsFilter {
   blockTimestamp_lt: BigInt
   blockTimestamp_gte: BigInt
   blockTimestamp_lte: BigInt
+}
+
+type sideTokenBalances {
+  token: String!
+  account: String!
+  balanceWei: BigInt!
+  updatedBlock: BigInt!
+}
+
+type sideTokenBalancesPage {
+  items: [sideTokenBalances!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input sideTokenBalancesFilter {
+  AND: [sideTokenBalancesFilter]
+  OR: [sideTokenBalancesFilter]
+  token: String
+  token_not: String
+  token_in: [String]
+  token_not_in: [String]
+  token_contains: String
+  token_not_contains: String
+  token_starts_with: String
+  token_ends_with: String
+  token_not_starts_with: String
+  token_not_ends_with: String
+  account: String
+  account_not: String
+  account_in: [String]
+  account_not_in: [String]
+  account_contains: String
+  account_not_contains: String
+  account_starts_with: String
+  account_ends_with: String
+  account_not_starts_with: String
+  account_not_ends_with: String
+  balanceWei: BigInt
+  balanceWei_not: BigInt
+  balanceWei_in: [BigInt]
+  balanceWei_not_in: [BigInt]
+  balanceWei_gt: BigInt
+  balanceWei_lt: BigInt
+  balanceWei_gte: BigInt
+  balanceWei_lte: BigInt
+  updatedBlock: BigInt
+  updatedBlock_not: BigInt
+  updatedBlock_in: [BigInt]
+  updatedBlock_not_in: [BigInt]
+  updatedBlock_gt: BigInt
+  updatedBlock_lt: BigInt
+  updatedBlock_gte: BigInt
+  updatedBlock_lte: BigInt
+}
+
+type traderMarketCosts {
+  trader: String!
+  marketVault: String!
+  qAWei: BigInt!
+  qBWei: BigInt!
+  costAUnits: BigInt!
+  costBUnits: BigInt!
+  updatedBlock: BigInt!
+}
+
+type traderMarketCostsPage {
+  items: [traderMarketCosts!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input traderMarketCostsFilter {
+  AND: [traderMarketCostsFilter]
+  OR: [traderMarketCostsFilter]
+  trader: String
+  trader_not: String
+  trader_in: [String]
+  trader_not_in: [String]
+  trader_contains: String
+  trader_not_contains: String
+  trader_starts_with: String
+  trader_ends_with: String
+  trader_not_starts_with: String
+  trader_not_ends_with: String
+  marketVault: String
+  marketVault_not: String
+  marketVault_in: [String]
+  marketVault_not_in: [String]
+  marketVault_contains: String
+  marketVault_not_contains: String
+  marketVault_starts_with: String
+  marketVault_ends_with: String
+  marketVault_not_starts_with: String
+  marketVault_not_ends_with: String
+  qAWei: BigInt
+  qAWei_not: BigInt
+  qAWei_in: [BigInt]
+  qAWei_not_in: [BigInt]
+  qAWei_gt: BigInt
+  qAWei_lt: BigInt
+  qAWei_gte: BigInt
+  qAWei_lte: BigInt
+  qBWei: BigInt
+  qBWei_not: BigInt
+  qBWei_in: [BigInt]
+  qBWei_not_in: [BigInt]
+  qBWei_gt: BigInt
+  qBWei_lt: BigInt
+  qBWei_gte: BigInt
+  qBWei_lte: BigInt
+  costAUnits: BigInt
+  costAUnits_not: BigInt
+  costAUnits_in: [BigInt]
+  costAUnits_not_in: [BigInt]
+  costAUnits_gt: BigInt
+  costAUnits_lt: BigInt
+  costAUnits_gte: BigInt
+  costAUnits_lte: BigInt
+  costBUnits: BigInt
+  costBUnits_not: BigInt
+  costBUnits_in: [BigInt]
+  costBUnits_not_in: [BigInt]
+  costBUnits_gt: BigInt
+  costBUnits_lt: BigInt
+  costBUnits_gte: BigInt
+  costBUnits_lte: BigInt
+  updatedBlock: BigInt
+  updatedBlock_not: BigInt
+  updatedBlock_in: [BigInt]
+  updatedBlock_not_in: [BigInt]
+  updatedBlock_gt: BigInt
+  updatedBlock_lt: BigInt
+  updatedBlock_gte: BigInt
+  updatedBlock_lte: BigInt
+}
+
+type traderPerformance {
+  trader: String!
+  realizedCostUnits: BigInt!
+  realizedPnlUnits: BigInt!
+  volumeUnits: BigInt!
+  tradeCount: BigInt!
+  winningSales: BigInt!
+  sales: BigInt!
+  currentStreak: BigInt!
+  updatedBlock: BigInt!
+}
+
+type traderPerformancePage {
+  items: [traderPerformance!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input traderPerformanceFilter {
+  AND: [traderPerformanceFilter]
+  OR: [traderPerformanceFilter]
+  trader: String
+  trader_not: String
+  trader_in: [String]
+  trader_not_in: [String]
+  trader_contains: String
+  trader_not_contains: String
+  trader_starts_with: String
+  trader_ends_with: String
+  trader_not_starts_with: String
+  trader_not_ends_with: String
+  realizedCostUnits: BigInt
+  realizedCostUnits_not: BigInt
+  realizedCostUnits_in: [BigInt]
+  realizedCostUnits_not_in: [BigInt]
+  realizedCostUnits_gt: BigInt
+  realizedCostUnits_lt: BigInt
+  realizedCostUnits_gte: BigInt
+  realizedCostUnits_lte: BigInt
+  realizedPnlUnits: BigInt
+  realizedPnlUnits_not: BigInt
+  realizedPnlUnits_in: [BigInt]
+  realizedPnlUnits_not_in: [BigInt]
+  realizedPnlUnits_gt: BigInt
+  realizedPnlUnits_lt: BigInt
+  realizedPnlUnits_gte: BigInt
+  realizedPnlUnits_lte: BigInt
+  volumeUnits: BigInt
+  volumeUnits_not: BigInt
+  volumeUnits_in: [BigInt]
+  volumeUnits_not_in: [BigInt]
+  volumeUnits_gt: BigInt
+  volumeUnits_lt: BigInt
+  volumeUnits_gte: BigInt
+  volumeUnits_lte: BigInt
+  tradeCount: BigInt
+  tradeCount_not: BigInt
+  tradeCount_in: [BigInt]
+  tradeCount_not_in: [BigInt]
+  tradeCount_gt: BigInt
+  tradeCount_lt: BigInt
+  tradeCount_gte: BigInt
+  tradeCount_lte: BigInt
+  winningSales: BigInt
+  winningSales_not: BigInt
+  winningSales_in: [BigInt]
+  winningSales_not_in: [BigInt]
+  winningSales_gt: BigInt
+  winningSales_lt: BigInt
+  winningSales_gte: BigInt
+  winningSales_lte: BigInt
+  sales: BigInt
+  sales_not: BigInt
+  sales_in: [BigInt]
+  sales_not_in: [BigInt]
+  sales_gt: BigInt
+  sales_lt: BigInt
+  sales_gte: BigInt
+  sales_lte: BigInt
+  currentStreak: BigInt
+  currentStreak_not: BigInt
+  currentStreak_in: [BigInt]
+  currentStreak_not_in: [BigInt]
+  currentStreak_gt: BigInt
+  currentStreak_lt: BigInt
+  currentStreak_gte: BigInt
+  currentStreak_lte: BigInt
+  updatedBlock: BigInt
+  updatedBlock_not: BigInt
+  updatedBlock_in: [BigInt]
+  updatedBlock_not_in: [BigInt]
+  updatedBlock_gt: BigInt
+  updatedBlock_lt: BigInt
+  updatedBlock_gte: BigInt
+  updatedBlock_lte: BigInt
 }
