@@ -1,0 +1,167 @@
+diff --git a/dist/esm/sync-realtime/bloom.js b/dist/esm/sync-realtime/bloom.js
+index 1f6dc5723d2276692bb7df64f6d571ba0306926b..a40a760c2414f22c0e52b7e837e61250e9875426 100644
+--- a/dist/esm/sync-realtime/bloom.js
++++ b/dist/esm/sync-realtime/bloom.js
+@@ -23,7 +23,7 @@ export const isInBloom = (_bloom, input) => {
+  *
+  * Note: False positives are possible.
+  */
+-export function isFilterInBloom({ block, filter, }) {
++export function isFilterInBloom({ block, filter, childAddresses, }) {
+     // Return `false` for out of range blocks
+     if (hexToNumber(block.number) < getFilterFromBlock(filter) ||
+         hexToNumber(block.number) > getFilterToBlock(filter)) {
+@@ -57,7 +57,10 @@ export function isFilterInBloom({ block, filter, }) {
+             isInBloom(block.logsBloom, filter.address.eventSelector)) {
+             return true;
+         }
+-        isAddressInBloom = true;
++        const children = childAddresses?.get(filter.address.id);
++        // Unknown coverage fails open; an explicitly empty map is safe to skip.
++        isAddressInBloom = children === undefined ||
++            Array.from(children.keys()).some((address) => isInBloom(block.logsBloom, address));
+     }
+     else if (Array.isArray(filter.address)) {
+         if (filter.address.length === 0) {
+diff --git a/dist/esm/sync-realtime/index.js b/dist/esm/sync-realtime/index.js
+index 7ef427f49fe1a3307fe0dcee12d0728ae1e5f4b7..7cb0928098950126c9b80c3f6213ded06b507019 100644
+--- a/dist/esm/sync-realtime/index.js
++++ b/dist/esm/sync-realtime/index.js
+@@ -152,9 +152,15 @@ export const createRealtimeSync = (args) => {
+         ////////
+         // "eth_getLogs" calls can be skipped if no filters match `newHeadBlock.logsBloom`.
+         // Async-execution chains can expose blocks before logsBloom is execution-ready.
++        // Speculative heads, gaps and reorgs retain the fail-open path.
++        const bloomParent = getLatestUnfinalizedBlock();
++        const bloomChildAddresses = args.chain.id === 5042 &&
++            maybeBlockHeader.parentHash === bloomParent.hash &&
++            hexToNumber(maybeBlockHeader.number) === hexToNumber(bloomParent.number) + 1
++            ? childAddresses : undefined;
+         const shouldRequestLogs = (isAsyncExecutionChain(args.chain.id) && logFilters.length > 0) ||
+             maybeBlockHeader.logsBloom === zeroLogsBloom ||
+-            logFilters.some((filter) => isFilterInBloom({ block: maybeBlockHeader, filter }));
++            logFilters.some((filter) => isFilterInBloom({ block: maybeBlockHeader, filter, childAddresses: bloomChildAddresses }));
+         let logs = [];
+         if (shouldRequestLogs) {
+             if (block === undefined) {
+@@ -730,7 +736,7 @@ export const createRealtimeSync = (args) => {
+                 logger: args.common.logger.child({
+                     action: "fetch_missing_blocks",
+                 }),
+-            }).then((block) => fetchBlockEventData(block))));
++            }).then((block) => args.chain.id === 5042 ? block : fetchBlockEventData(block))));
+             args.common.logger.debug({
+                 msg: "Fetched missing blocks",
+                 chain: args.chain.name,
+@@ -741,7 +747,9 @@ export const createRealtimeSync = (args) => {
+                 ]),
+             });
+             for (const pendingBlock of pendingBlocks) {
+-                yield* reconcileBlock(pendingBlock);
++                // Reconcile registrations before filtering the next block.
++                yield* reconcileBlock("block" in pendingBlock
++                    ? pendingBlock : await fetchBlockEventData(pendingBlock));
+             }
+             if (hexToNumber(block.number) - hexToNumber(latestBlock.number) >
+                 MAX_QUEUED_BLOCKS) {
+diff --git a/dist/types/sync-realtime/bloom.d.ts b/dist/types/sync-realtime/bloom.d.ts
+index 9d9aa20d01ac0fbaacff291dbe4f7dc8b4e089eb..5f5a0265fbe0853cfe60e13f7fd496bf8eb81f0f 100644
+--- a/dist/types/sync-realtime/bloom.d.ts
++++ b/dist/types/sync-realtime/bloom.d.ts
+@@ -1,4 +1,4 @@
+-import { type Hex } from "viem";
++import { type Address, type Hex } from "viem";
+ import type { LogFilter, SyncBlock } from '../internal/types.js';
+ export declare const zeroLogsBloom = "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+ export declare const isInBloom: (_bloom: Hex, input: Hex) => boolean;
+@@ -11,8 +11,9 @@ export declare const isInBloom: (_bloom: Hex, input: Hex) => boolean;
+  *
+  * Note: False positives are possible.
+  */
+-export declare function isFilterInBloom({ block, filter, }: {
++export declare function isFilterInBloom({ block, filter, childAddresses, }: {
+     block: Pick<SyncBlock, "number" | "logsBloom">;
+     filter: LogFilter;
++    childAddresses?: ReadonlyMap<string, ReadonlyMap<Address, number>>;
+ }): boolean;
+ //# sourceMappingURL=bloom.d.ts.map
+diff --git a/src/sync-realtime/bloom.ts b/src/sync-realtime/bloom.ts
+index 7b6895a2a55deb32c934c24dbcd9a6e533e23338..421fa05f1b564811965572d8c36ccd15991bc359 100644
+--- a/src/sync-realtime/bloom.ts
++++ b/src/sync-realtime/bloom.ts
+@@ -1,4 +1,4 @@
+-import { type Hex, hexToBytes, hexToNumber, keccak256 } from "viem";
++import { type Address, type Hex, hexToBytes, hexToNumber, keccak256 } from "viem";
+ import type { LogFilter, SyncBlock } from "@/internal/types.js";
+ import {
+   getFilterFromBlock,
+@@ -40,9 +40,12 @@ export const isInBloom = (_bloom: Hex, input: Hex): boolean => {
+ export function isFilterInBloom({
+   block,
+   filter,
++  childAddresses,
+ }: {
+   block: Pick<SyncBlock, "number" | "logsBloom">;
+   filter: LogFilter;
++  /** Only supply a complete child map through this block's canonical parent. */
++  childAddresses?: ReadonlyMap<string, ReadonlyMap<Address, number>>;
+ }): boolean {
+   // Return `false` for out of range blocks
+   if (
+@@ -84,7 +87,10 @@ export function isFilterInBloom({
+       return true;
+     }
+ 
+-    isAddressInBloom = true;
++    const children = childAddresses?.get(filter.address.id);
++    // Unknown coverage fails open; an explicitly empty map is safe to skip.
++    isAddressInBloom = children === undefined ||
++      Array.from(children.keys()).some((address) => isInBloom(block.logsBloom, address));
+   } else if (Array.isArray(filter.address)) {
+     if (filter.address.length === 0) {
+       isAddressInBloom = true;
+diff --git a/src/sync-realtime/index.ts b/src/sync-realtime/index.ts
+index df6c33cd8c53fa49089b88c80c4490a50842b388..7d5025847ee96762cd213841e49441a14809eb00 100644
+--- a/src/sync-realtime/index.ts
++++ b/src/sync-realtime/index.ts
+@@ -302,11 +302,18 @@ export const createRealtimeSync = (
+ 
+     // "eth_getLogs" calls can be skipped if no filters match `newHeadBlock.logsBloom`.
+     // Async-execution chains can expose blocks before logsBloom is execution-ready.
++    // Only use child addresses after reconciling the exact parent. Speculative
++    // heads, gaps and reorgs must retain the original topic-only (fail-open) path.
++    const bloomParent = getLatestUnfinalizedBlock();
++    const bloomChildAddresses = args.chain.id === 5042 &&
++      maybeBlockHeader.parentHash === bloomParent.hash &&
++      hexToNumber(maybeBlockHeader.number) === hexToNumber(bloomParent.number) + 1
++      ? childAddresses : undefined;
+     const shouldRequestLogs =
+       (isAsyncExecutionChain(args.chain.id) && logFilters.length > 0) ||
+       maybeBlockHeader.logsBloom === zeroLogsBloom ||
+       logFilters.some((filter) =>
+-        isFilterInBloom({ block: maybeBlockHeader, filter }),
++        isFilterInBloom({ block: maybeBlockHeader, filter, childAddresses: bloomChildAddresses }),
+       );
+ 
+     let logs: SyncLog[] = [];
+@@ -1053,7 +1060,7 @@ export const createRealtimeSync = (
+             logger: args.common.logger.child({
+               action: "fetch_missing_blocks",
+             }),
+-          }).then((block) => fetchBlockEventData(block)),
++          }).then((block) => args.chain.id === 5042 ? block : fetchBlockEventData(block)),
+         ),
+       );
+ 
+@@ -1071,7 +1078,10 @@ export const createRealtimeSync = (
+       });
+ 
+       for (const pendingBlock of pendingBlocks) {
+-        yield* reconcileBlock(pendingBlock);
++        // Arc: reconcile registrations before filtering the next block. Never
++        // bloom-filter a whole prefetched batch against a stale factory map.
++        yield* reconcileBlock("block" in pendingBlock
++          ? pendingBlock : await fetchBlockEventData(pendingBlock));
+       }
+ 
+       if (

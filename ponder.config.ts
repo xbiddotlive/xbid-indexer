@@ -1,8 +1,9 @@
-import { createConfig, factory, rateLimit } from "ponder";
-import { http, parseAbiItem } from "viem";
+import { createConfig, factory } from "ponder";
+import { parseAbiItem } from "viem";
 
 import { feeVaultAbi, marketRegistryAbi, marketVaultAbi, sideTokenAbi } from "./src/abis";
 import { resolveIndexerEnvironment } from "./src/environment";
+import { officialPublicRpc } from "./src/public-rpc";
 
 const { chainId, rpcUrl, registry, feeVault, startBlock: deploymentStartBlock } = resolveIndexerEnvironment();
 
@@ -10,11 +11,8 @@ export default createConfig({
   chains: {
     robinhoodTestnet: {
       id: chainId,
-      // Arc's public endpoint needs a hard cap; Ponder's deprecated
-      // maxRequestsPerSecond setting no longer limits requests.
-      rpc: chainId === 5042
-        ? rateLimit(http(rpcUrl), { requestsPerSecond: 8, browser: false })
-        : rpcUrl,
+      // Smooth requests instead of bursting at each wall-clock second.
+      rpc: chainId === 5042 ? officialPublicRpc(rpcUrl) : rpcUrl,
       pollingInterval: chainId === 5042 ? 5_000 : 1_000,
     },
   },

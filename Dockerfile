@@ -3,6 +3,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN corepack enable && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 xbid
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 COPY ponder.config.ts ponder.schema.ts tsconfig.json ./
 COPY src ./src

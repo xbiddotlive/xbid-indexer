@@ -12,6 +12,11 @@ overrides:
   vite: 6.4.3
   ws: 8.21.0
 
+patchedDependencies:
+  ponder@0.17.8:
+    hash: 6f1bfd3a6a7b39aac339d38c0cefa9d971e0690cdcf04e308e6f454bf7d9e201
+    path: patches/ponder@0.17.8.patch
+
 importers:
 
   .:
@@ -24,7 +29,7 @@ importers:
         version: 8.23.0
       ponder:
         specifier: 0.17.8
-        version: 0.17.8(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@types/pg@8.23.1)(hono@4.13.5)(tsx@4.23.13)(typescript@5.9.3)(viem@2.56.2(typescript@5.9.3))
+        version: 0.17.8(patch_hash=6f1bfd3a6a7b39aac339d38c0cefa9d971e0690cdcf04e308e6f454bf7d9e201)(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@types/pg@8.23.1)(hono@4.13.5)(tsx@4.23.13)(typescript@5.9.3)(viem@2.56.2(typescript@5.9.3))
       viem:
         specifier: 2.56.2
         version: 2.56.2(typescript@5.9.3)
@@ -2122,7 +2127,7 @@ snapshots:
       sonic-boom: 3.8.1
       thread-stream: 2.7.0
 
-  ponder@0.17.8(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@types/pg@8.23.1)(hono@4.13.5)(tsx@4.23.13)(typescript@5.9.3)(viem@2.56.2(typescript@5.9.3)):
+  ponder@0.17.8(patch_hash=6f1bfd3a6a7b39aac339d38c0cefa9d971e0690cdcf04e308e6f454bf7d9e201)(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@types/pg@8.23.1)(hono@4.13.5)(tsx@4.23.13)(typescript@5.9.3)(viem@2.56.2(typescript@5.9.3)):
     dependencies:
       '@babel/code-frame': 7.29.7
       '@commander-js/extra-typings': 12.1.0(commander@12.1.0)

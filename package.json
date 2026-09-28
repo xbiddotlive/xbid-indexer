@@ -31,6 +31,9 @@
       "kysely": "0.28.17",
       "vite": "6.4.3",
       "ws": "8.21.0"
+    },
+    "patchedDependencies": {
+      "ponder@0.17.8": "patches/ponder@0.17.8.patch"
     }
   }
 }
