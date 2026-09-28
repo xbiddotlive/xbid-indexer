@@ -8,6 +8,9 @@ import { officialPublicRpc } from "./src/public-rpc";
 const { chainId, rpcUrl, registry, feeVault, startBlock: deploymentStartBlock } = resolveIndexerEnvironment();
 
 export default createConfig({
+  // Explicit: upstream defaults to multichain. The Arc range patch uses the
+  // stable omnichain projector (one chain), never experimental ordering.
+  ordering: chainId === 5042 ? "omnichain" : undefined,
   chains: {
     robinhoodTestnet: {
       id: chainId,

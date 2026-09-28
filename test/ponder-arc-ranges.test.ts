@@ -4,7 +4,8 @@ import { numberToHex, pad, toEventSelector, zeroHash } from "viem";
 import { isArcRangeMode, waitForNextArcRange } from "../node_modules/ponder/dist/esm/runtime/arc-ranges.js";
 import { createHistoricalSync } from "../node_modules/ponder/dist/esm/sync-historical/index.js";
 import { assertScopedLogRequest } from "../src/public-rpc";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 
 process.env.PONDER_ARC_RANGE_MODE = "true";
 const registry = "0x1111111111111111111111111111111111111111";
@@ -21,7 +22,7 @@ test("range mode is explicit and limited to Arc mainnet", () => {
   assert.equal(isArcRangeMode({ id: 46630 }), false);
 });
 
-test("production's default omnichain path cannot fall back to per-block realtime", () => {
+test("configured omnichain path cannot fall back to per-block realtime", () => {
   const historical = readFileSync(new URL("../node_modules/ponder/dist/esm/runtime/historical.js", import.meta.url), "utf8");
   const omnichain = historical.slice(historical.indexOf("export async function* getHistoricalEventsOmnichain"), historical.indexOf("export async function* getHistoricalEventsMultichain"));
   assert.match(omnichain, /await waitForNextArcRange/);
@@ -29,6 +30,23 @@ test("production's default omnichain path cannot fall back to per-block realtime
   const projector = readFileSync(new URL("../node_modules/ponder/dist/esm/runtime/omnichain.js", import.meta.url), "utf8");
   assert.match(projector, /arcReadyCheckpoint/);
   assert.match(projector, /per-block realtime sync disabled/);
+});
+
+test("actual Arc config explicitly selects the patched production ordering", async () => {
+  Object.assign(process.env, {
+    XBID_ENVIRONMENT: "mainnet", PONDER_CHAIN_ID: "5042", PONDER_RPC_URL: "https://rpc.mainnet.arc.io",
+    PONDER_REGISTRY_ADDRESS: registry, PONDER_FEE_VAULT_ADDRESS: "0x4444444444444444444444444444444444444444",
+    PONDER_START_BLOCK: "100", PUBLIC_METRICS_START_BLOCK: "100",
+  });
+  // Ponder loads TypeScript config with Vite, not CommonJS require().
+  const resolve = createRequire(realpathSync(new URL("../node_modules/ponder/dist/esm/build/index.js", import.meta.url)));
+  const { createServer } = await import(resolve.resolve("vite"));
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, watch: null }, appType: "custom" });
+  try {
+    const { default: config } = await vite.ssrLoadModule("/ponder.config.ts");
+    assert.equal(config.ordering, "omnichain");
+    assert.equal(config.chains.robinhoodTestnet.id, 5042);
+  } finally { await vite.close(); }
 });
 
 test("advancing 10,000 blocks only reads three boundary headers", async () => {

@@ -2,8 +2,9 @@
 
 Pinned Ponder 0.17.8 patch. Enabled only on chain 5042 with
 `PONDER_ARC_RANGE_MODE=true`; other chains retain upstream behavior. Both the
-default omnichain production path and isolated path are covered; production
-continues to use the default stable omnichain ordering, not experimental mode.
+omnichain production path and isolated path are covered. Arc configuration
+explicitly selects stable omnichain ordering (one chain), not the upstream
+multichain default or experimental mode.
 
 The Arc worker continuously reuses Ponder's historical range-log pipeline instead
 of entering its per-block realtime mode. Registry factory discovery runs before
