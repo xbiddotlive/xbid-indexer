@@ -13,7 +13,7 @@ export default createConfig({
       // Arc's public endpoint needs a hard cap; Ponder's deprecated
       // maxRequestsPerSecond setting no longer limits requests.
       rpc: chainId === 5042
-        ? rateLimit(http(rpcUrl), { requestsPerSecond: 2, browser: false })
+        ? rateLimit(http(rpcUrl), { requestsPerSecond: 8, browser: false })
         : rpcUrl,
       pollingInterval: chainId === 5042 ? 5_000 : 1_000,
     },
