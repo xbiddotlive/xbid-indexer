@@ -33,6 +33,9 @@ export function resolveIndexerEnvironment(input: NodeJS.ProcessEnv = process.env
   if ((chainId === 84532 && environment !== "testnet") || (chainId === 8453 && environment !== "mainnet")) {
     throw new Error("Base chain ID and XBID_ENVIRONMENT disagree.");
   }
+  if ((chainId === 5042002 && environment !== "testnet") || (chainId === 5042 && environment !== "mainnet")) {
+    throw new Error("Arc chain ID and XBID_ENVIRONMENT disagree.");
+  }
   const otherTestnet = environment === "testnet" && chainId !== TESTNET.chainId;
   if (otherTestnet) {
     const required = ["PONDER_RPC_URL", "PONDER_REGISTRY_ADDRESS", "PONDER_FEE_VAULT_ADDRESS", "PONDER_START_BLOCK", "PUBLIC_METRICS_START_BLOCK"];
@@ -68,6 +71,12 @@ export function resolveIndexerEnvironment(input: NodeJS.ProcessEnv = process.env
   }
   if (!URL.canParse(rpcUrl)) throw new Error("PONDER_RPC_URL must be a valid URL.");
   const rpc = new URL(rpcUrl);
+  if ([5042, 5042002].includes(chainId)) {
+    const host = rpc.hostname.replace(/\.$/, "");
+    if ((host === "arc.io" || host.endsWith(".arc.io")) && host.split(".").includes("testnet") !== (environment === "testnet")) {
+      throw new Error("Arc endpoint and chain environment disagree for PONDER_RPC_URL.");
+    }
+  }
   if (environment === "mainnet" && rpc.protocol !== "https:") {
     throw new Error("mainnet indexer requires HTTPS for PONDER_RPC_URL");
   }

@@ -10,6 +10,17 @@ const baseSepolia = {
   PONDER_START_BLOCK: "100", PUBLIC_METRICS_START_BLOCK: "100",
 };
 
+test("Arc indexer rejects mixed networks and missing replay boundaries", () => {
+  const arc = { ...baseSepolia, XBID_ENVIRONMENT: "mainnet", PONDER_CHAIN_ID: "5042", PONDER_RPC_URL: "https://rpc.mainnet.arc.io" };
+  assert.equal(resolveIndexerEnvironment(arc).chainId, 5042);
+  assert.equal(resolveIndexerEnvironment({ ...arc, XBID_ENVIRONMENT: "testnet", PONDER_CHAIN_ID: "5042002", PONDER_RPC_URL: "https://rpc.testnet.arc.io" }).chainId, 5042002);
+  assert.throws(() => resolveIndexerEnvironment({ ...arc, PONDER_CHAIN_ID: "5042002" }), /Arc chain ID/);
+  assert.throws(() => resolveIndexerEnvironment({ ...arc, XBID_ENVIRONMENT: "testnet" }), /Arc chain ID/);
+  assert.throws(() => resolveIndexerEnvironment({ ...arc, PONDER_RPC_URL: "https://rpc.testnet.arc.io./" }), /Arc endpoint/);
+  assert.throws(() => resolveIndexerEnvironment({ ...arc, PONDER_START_BLOCK: undefined }), /explicitly set/);
+  assert.throws(() => resolveIndexerEnvironment({ ...arc, PONDER_REGISTRY_ADDRESS: undefined }), /explicitly set/);
+});
+
 test("Base Sepolia indexer requires an explicit, isolated deployment", () => {
   assert.equal(resolveIndexerEnvironment(baseSepolia).chainId, 84532);
   for (const key of ["PONDER_RPC_URL", "PONDER_REGISTRY_ADDRESS", "PONDER_FEE_VAULT_ADDRESS", "PONDER_START_BLOCK", "PUBLIC_METRICS_START_BLOCK"]) {
