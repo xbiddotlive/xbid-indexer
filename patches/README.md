@@ -1,7 +1,9 @@
 # Arc address-scoped range indexing
 
 Pinned Ponder 0.17.8 patch. Enabled only on chain 5042 with
-`PONDER_ARC_RANGE_MODE=true`; other chains retain upstream behavior.
+`PONDER_ARC_RANGE_MODE=true`; other chains retain upstream behavior. Both the
+default omnichain production path and isolated path are covered; production
+continues to use the default stable omnichain ordering, not experimental mode.
 
 The Arc worker continuously reuses Ponder's historical range-log pipeline instead
 of entering its per-block realtime mode. Registry factory discovery runs before
@@ -24,10 +26,12 @@ initial confirmed checkpoint commits. The app reads PostgreSQL projections;
 Ponder realtime live-query subscriptions are not used. A confirmed-boundary
 integrity error requires operator recovery, not silent skipping.
 
-`src/public-rpc.ts` separately serializes requests with >=300ms between starts,
+`src/public-rpc.ts` separately serializes requests with >=1000ms between starts,
 a shared 5–30s exponential cooldown after throttling, and bounded queue pressure.
 Ponder remains responsible for retries; failed RPC calls never become empty logs.
 Minute-level cumulative counters log method names/counts, not URLs or payloads.
+Identical concurrent factory Registry queries share one in-flight RPC result;
+later requests are not cached, preserving fresh boundary/reorg checks.
 The interval is an application limit, not a claim about Arc's published quota.
 Run `pnpm check` after upgrades. Tests exercise the installed runtime, including
 empty ranges, boundary consistency, factory discovery and scoped query chunks.

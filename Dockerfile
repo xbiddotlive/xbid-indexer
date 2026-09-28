@@ -7,7 +7,7 @@ COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 COPY ponder.config.ts ponder.schema.ts tsconfig.json ./
 COPY src ./src
-RUN pnpm build && chown -R xbid:nodejs /app
+RUN pnpm build && chown xbid:nodejs /app ponder-env.d.ts
 USER xbid
 EXPOSE 42069
 CMD ["pnpm", "start", "--", "--hostname", "0.0.0.0", "--port", "42069"]

@@ -27,7 +27,7 @@ index 0000000000000000000000000000000000000000..e4b0edb051fbc2e4d84755f5a3b62e0b
 +  waitForNextArcRange
 +};
 diff --git a/dist/esm/runtime/historical.js b/dist/esm/runtime/historical.js
-index aa453e461e0dcb99f9837cc29c1f51f35be159b5..72584879f5975de49d702f9d8c80d1152af03f29 100644
+index aa453e461e0dcb99f9837cc29c1f51f35be159b5..c6d4729d7d99c934db8a3b52b9d683723034891b 100644
 --- a/dist/esm/runtime/historical.js
 +++ b/dist/esm/runtime/historical.js
 @@ -14,6 +14,7 @@ import { promiseWithResolvers } from '../utils/promiseWithResolvers.js';
@@ -38,7 +38,22 @@ index aa453e461e0dcb99f9837cc29c1f51f35be159b5..72584879f5975de49d702f9d8c80d115
  export async function* getHistoricalEventsOmnichain(params) {
      let pendingEvents = [];
      let isCatchup = false;
-@@ -389,6 +390,8 @@ export async function* getHistoricalEventsIsolated(params) {
+@@ -179,6 +180,14 @@ export async function* getHistoricalEventsOmnichain(params) {
+         for await (const mergeResults of eventGenerator) {
+             yield { type: "events", result: mergeResults };
+         }
++        if (params.indexingBuild.chains.length === 1 && isArcRangeMode(params.indexingBuild.chains[0])) {
++            const chain = params.indexingBuild.chains[0];
++            const progress = params.perChainSync.get(chain).syncProgress;
++            if (progress.end !== undefined) throw new Error("Arc range mode requires an unbounded deployment.");
++            progress.finalized = await waitForNextArcRange({ common: params.common, chain, rpc: params.indexingBuild.rpcs[0], previous: progress.finalized });
++            isCatchup = true;
++            continue;
++        }
+         const context = {
+             logger: params.common.logger.child({ action: "refetch_finalized_block" }),
+             retryNullBlockRequest: true,
+@@ -389,6 +398,8 @@ export async function* getHistoricalEventsIsolated(params) {
      let isCatchup = false;
      let lastUnfinalizedRefetch = Date.now();
      let cursor;
@@ -47,7 +62,7 @@ index aa453e461e0dcb99f9837cc29c1f51f35be159b5..72584879f5975de49d702f9d8c80d115
      while (true) {
          const rpc = params.indexingBuild.rpcs[params.indexingBuild.chains.findIndex((c) => c.id === params.chain.id)];
          const eventCallbacks = params.indexingBuild.eventCallbacks[params.indexingBuild.chains.findIndex((c) => c.id === params.chain.id)];
-@@ -417,8 +420,11 @@ export async function* getHistoricalEventsIsolated(params) {
+@@ -417,8 +428,11 @@ export async function* getHistoricalEventsIsolated(params) {
                  chainId: decodeCheckpoint(cursor).chainId,
                  blockNumber: decodeCheckpoint(cursor).blockNumber + 1n,
              });
@@ -61,7 +76,7 @@ index aa453e461e0dcb99f9837cc29c1f51f35be159b5..72584879f5975de49d702f9d8c80d115
          }
          params.common.logger.info({
              msg: "Started backfill indexing",
-@@ -473,6 +479,11 @@ export async function* getHistoricalEventsIsolated(params) {
+@@ -473,6 +487,11 @@ export async function* getHistoricalEventsIsolated(params) {
              yield { chainId: params.chain.id, events, checkpoint, blockRange };
          }
          cursor = to;
@@ -106,6 +121,50 @@ index 17c7452ea4e7b1fb0313db9b1f3e3eba673b3e43..72137a9cb31c7ac99c996621afa938d2
          common.logger.info({
              msg: "Indexed block range",
              chain: chain.name,
+diff --git a/dist/esm/runtime/omnichain.js b/dist/esm/runtime/omnichain.js
+index b9f455ebda4d9fa23459d9c12d8fbe8a32dc9e46..928e0bd107d1efc83ad98cad149ff93a59b6c1ec 100644
+--- a/dist/esm/runtime/omnichain.js
++++ b/dist/esm/runtime/omnichain.js
+@@ -19,6 +19,7 @@ import { zipperMany } from '../utils/zipper.js';
+ import { getHistoricalEventsOmnichain, refetchHistoricalEvents, } from "./historical.js";
+ import { getCachedIntervals, getChildAddresses, getLocalSyncProgress, } from "./index.js";
+ import { getRealtimeEventsOmnichain } from "./realtime.js";
++import { isArcRangeMode } from "./arc-ranges.js";
+ export async function runOmnichain({ common, preBuild, namespaceBuild, schemaBuild, indexingBuild, crashRecoveryCheckpoint, database, }) {
+     const columnAccessPattern = createColumnAccessPattern({
+         indexingBuild,
+@@ -169,6 +170,9 @@ export async function runOmnichain({ common, preBuild, namespaceBuild, schemaBui
+         clearInterval(etaInterval);
+     });
+     const backfillEndClock = startClock();
++    const arcReadyCheckpoint = indexingBuild.chains.length === 1 && isArcRangeMode(indexingBuild.chains[0])
++        ? perChainSync.get(indexingBuild.chains[0]).syncProgress.getCheckpoint({ tag: "finalized" }) : undefined;
++    let arcReady = false;
+     let pendingEvents = [];
+     // Run historical indexing until complete.
+     for await (const result of recordAsyncGenerator(getHistoricalEventsOmnichain({
+@@ -279,6 +283,21 @@ export async function runOmnichain({ common, preBuild, namespaceBuild, schemaBui
+         cachedViemClient.clear();
+         common.metrics.ponder_historical_transform_duration.inc({ step: "commit" }, endClock());
+         await new Promise(setImmediate);
++        if (arcReadyCheckpoint !== undefined) {
++            for (const { chainId, checkpoint } of result.result) {
++                common.metrics.ponder_indexing_timestamp.set({ chain: indexingBuild.chains.find((chain) => chain.id === chainId).name }, Number(decodeCheckpoint(checkpoint).blockTimestamp));
++            }
++            if (!arcReady && result.result.some(({ checkpoint }) => checkpoint >= arcReadyCheckpoint)) {
++                await createIndexes(database.adminQB, { statements: schemaBuild.statements });
++                if (namespaceBuild.viewsSchema !== undefined) {
++                    await createViews(database.adminQB, { tables: Object.values(schemaBuild.schema).filter(isTable), views: Object.values(schemaBuild.schema).filter(isView), namespaceBuild });
++                }
++                await database.adminQB.wrap({ label: "update_ready" }, (db) => db.update(PONDER_META).set({ value: sql`jsonb_set(value, '{is_ready}', to_jsonb(1))` }));
++                arcReady = true;
++                clearInterval(etaInterval);
++                common.logger.info({ msg: "XBID address-scoped range indexing ready; per-block realtime sync disabled", chain_id: 5042 });
++            }
++        }
+         for (const { chainId, events, blockRange } of result.result) {
+             common.logger.info({
+                 msg: "Indexed block range",
 diff --git a/dist/esm/sync-historical/index.js b/dist/esm/sync-historical/index.js
 index 18a8065d73aa3eee16ecad7bc85a5454fdf08661..18b7776483e7eab36ba1b831f9675a35aa1211fa 100644
 --- a/dist/esm/sync-historical/index.js
@@ -181,7 +240,7 @@ index 0000000000000000000000000000000000000000..bd9d8dd7a9776f9e6ce189462b90043d
 +  throw new ShutdownError();
 +}
 diff --git a/src/runtime/historical.ts b/src/runtime/historical.ts
-index 87ea9aac20913b6874d6a96e210bb8346578f5e7..78529a917a4657edaba4724eaf5e380e2172f7a3 100644
+index 87ea9aac20913b6874d6a96e210bb8346578f5e7..02cb59542eeb496e7217a2a63c11c36a1ec7a516 100644
 --- a/src/runtime/historical.ts
 +++ b/src/runtime/historical.ts
 @@ -42,6 +42,7 @@ import {
@@ -192,7 +251,25 @@ index 87ea9aac20913b6874d6a96e210bb8346578f5e7..78529a917a4657edaba4724eaf5e380e
  
  export async function* getHistoricalEventsOmnichain(params: {
    common: Common;
-@@ -654,6 +655,8 @@ export async function* getHistoricalEventsIsolated(params: {
+@@ -311,6 +312,17 @@ export async function* getHistoricalEventsOmnichain(params: {
+       yield { type: "events", result: mergeResults };
+     }
+ 
++    // XBID has one Arc chain. Keep the stable omnichain projector/transactions,
++    // but continue address-scoped confirmed ranges instead of realtime blocks.
++    if (params.indexingBuild.chains.length === 1 && isArcRangeMode(params.indexingBuild.chains[0]!)) {
++      const chain = params.indexingBuild.chains[0]!;
++      const progress = params.perChainSync.get(chain)!.syncProgress;
++      if (progress.end !== undefined) throw new Error("Arc range mode requires an unbounded deployment.");
++      progress.finalized = await waitForNextArcRange({ common: params.common, chain, rpc: params.indexingBuild.rpcs[0]!, previous: progress.finalized });
++      isCatchup = true;
++      continue;
++    }
++
+     const context = {
+       logger: params.common.logger.child({ action: "refetch_finalized_block" }),
+       retryNullBlockRequest: true,
+@@ -654,6 +666,8 @@ export async function* getHistoricalEventsIsolated(params: {
    let isCatchup = false;
    let lastUnfinalizedRefetch = Date.now();
    let cursor: string | undefined;
@@ -201,7 +278,7 @@ index 87ea9aac20913b6874d6a96e210bb8346578f5e7..78529a917a4657edaba4724eaf5e380e
  
    while (true) {
      const rpc =
-@@ -699,7 +702,13 @@ export async function* getHistoricalEventsIsolated(params: {
+@@ -699,7 +713,13 @@ export async function* getHistoricalEventsIsolated(params: {
          blockNumber: decodeCheckpoint(cursor!).blockNumber + 1n,
        });
  
@@ -216,7 +293,7 @@ index 87ea9aac20913b6874d6a96e210bb8346578f5e7..78529a917a4657edaba4724eaf5e380e
      }
  
      params.common.logger.info({
-@@ -784,6 +793,14 @@ export async function* getHistoricalEventsIsolated(params: {
+@@ -784,6 +804,14 @@ export async function* getHistoricalEventsIsolated(params: {
  
      cursor = to;
  
@@ -265,6 +342,51 @@ index d9cd1c3f952d8b9bcded1d2d3306fc2a6af509a2..38843132b2947633f65d11f10fe9c791
      common.logger.info({
        msg: "Indexed block range",
        chain: chain.name,
+diff --git a/src/runtime/omnichain.ts b/src/runtime/omnichain.ts
+index a91c0e9182c281c183441e8c265e5a061b59870f..8c2cf184d6f3b695fa1a4736323493746f6f7d22 100644
+--- a/src/runtime/omnichain.ts
++++ b/src/runtime/omnichain.ts
+@@ -72,6 +72,7 @@ import {
+   type SyncProgress,
+ } from "./index.js";
+ import { getRealtimeEventsOmnichain } from "./realtime.js";
++import { isArcRangeMode } from "./arc-ranges.js";
+ 
+ export async function runOmnichain({
+   common,
+@@ -319,6 +320,9 @@ export async function runOmnichain({
+   });
+ 
+   const backfillEndClock = startClock();
++  const arcReadyCheckpoint = indexingBuild.chains.length === 1 && isArcRangeMode(indexingBuild.chains[0]!)
++    ? perChainSync.get(indexingBuild.chains[0]!)!.syncProgress.getCheckpoint({ tag: "finalized" }) : undefined;
++  let arcReady = false;
+ 
+   let pendingEvents: Event[] = [];
+ 
+@@ -516,6 +520,22 @@ export async function runOmnichain({
+ 
+     await new Promise(setImmediate);
+ 
++    if (arcReadyCheckpoint !== undefined) {
++      for (const { chainId, checkpoint } of result.result) {
++        common.metrics.ponder_indexing_timestamp.set({ chain: indexingBuild.chains.find((chain) => chain.id === chainId)!.name }, Number(decodeCheckpoint(checkpoint).blockTimestamp));
++      }
++      if (!arcReady && result.result.some(({ checkpoint }) => checkpoint >= arcReadyCheckpoint)) {
++        await createIndexes(database.adminQB, { statements: schemaBuild.statements });
++        if (namespaceBuild.viewsSchema !== undefined) {
++          await createViews(database.adminQB, { tables: Object.values(schemaBuild.schema).filter(isTable), views: Object.values(schemaBuild.schema).filter(isView), namespaceBuild });
++        }
++        await database.adminQB.wrap({ label: "update_ready" }, (db) => db.update(PONDER_META).set({ value: sql`jsonb_set(value, '{is_ready}', to_jsonb(1))` }));
++        arcReady = true;
++        clearInterval(etaInterval);
++        common.logger.info({ msg: "XBID address-scoped range indexing ready; per-block realtime sync disabled", chain_id: 5042 });
++      }
++    }
++
+     for (const { chainId, events, blockRange } of result.result) {
+       common.logger.info({
+         msg: "Indexed block range",
 diff --git a/src/sync-historical/index.ts b/src/sync-historical/index.ts
 index e9b9b8a614f5d1c56d6dd2827c34a6c6d435074b..85af122fbc4026269b7fd9a0a801763a78211322 100644
 --- a/src/sync-historical/index.ts

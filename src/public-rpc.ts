@@ -31,7 +31,7 @@ export function createRpcScheduler(options: {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 } = {}) {
-  const intervalMs = options.intervalMs ?? 300;
+  const intervalMs = options.intervalMs ?? 1_000;
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   let tail: Promise<unknown> = Promise.resolve();
@@ -71,10 +71,23 @@ export function createRpcScheduler(options: {
   };
 }
 
+export function createInflightCoalescer() {
+  const requests = new Map<string, Promise<unknown>>();
+  return <T>(key: string, request: () => Promise<T>): Promise<T> => {
+    const existing = requests.get(key);
+    if (existing) return existing as Promise<T>;
+    const promise = request();
+    requests.set(key, promise);
+    void promise.then(() => requests.delete(key), () => requests.delete(key));
+    return promise;
+  };
+}
+
 export function officialPublicRpc(url: string): Transport {
   return ({ chain, timeout }) => {
     const transport = http(url, { retryCount: 0, timeout: timeout ?? 10_000 })({ chain, retryCount: 0 });
     const scheduler = createRpcScheduler();
+    const coalesce = createInflightCoalescer();
     let reportAt = Date.now() + 60_000;
     const methods: Record<string, number> = {};
     return createTransport({
@@ -85,10 +98,13 @@ export function officialPublicRpc(url: string): Transport {
       request: (async (body: Parameters<typeof transport.request>[0]) => {
         assertScopedLogRequest(body);
         try {
-          return await scheduler.run(() => {
+          const request = () => scheduler.run(() => {
             methods[body.method] = (methods[body.method] ?? 0) + 1;
             return transport.request(body);
           });
+          // Factory A/B/Vault discovery asks the identical Registry range.
+          // Coalesce only in-flight requests; never cache a boundary/reorg check.
+          return await (body.method === "eth_getLogs" ? coalesce(JSON.stringify(body), request) : request());
         } finally {
           if (Date.now() >= reportAt) {
             reportAt = Date.now() + 60_000;

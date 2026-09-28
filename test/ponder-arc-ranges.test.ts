@@ -4,6 +4,7 @@ import { numberToHex, pad, toEventSelector, zeroHash } from "viem";
 import { isArcRangeMode, waitForNextArcRange } from "../node_modules/ponder/dist/esm/runtime/arc-ranges.js";
 import { createHistoricalSync } from "../node_modules/ponder/dist/esm/sync-historical/index.js";
 import { assertScopedLogRequest } from "../src/public-rpc";
+import { readFileSync } from "node:fs";
 
 process.env.PONDER_ARC_RANGE_MODE = "true";
 const registry = "0x1111111111111111111111111111111111111111";
@@ -18,6 +19,16 @@ const header = (n: number) => ({ number: numberToHex(n), hash: pad(numberToHex(n
 test("range mode is explicit and limited to Arc mainnet", () => {
   assert.equal(isArcRangeMode({ id: 5042 }), true);
   assert.equal(isArcRangeMode({ id: 46630 }), false);
+});
+
+test("production's default omnichain path cannot fall back to per-block realtime", () => {
+  const historical = readFileSync(new URL("../node_modules/ponder/dist/esm/runtime/historical.js", import.meta.url), "utf8");
+  const omnichain = historical.slice(historical.indexOf("export async function* getHistoricalEventsOmnichain"), historical.indexOf("export async function* getHistoricalEventsMultichain"));
+  assert.match(omnichain, /await waitForNextArcRange/);
+  assert.match(omnichain, /isCatchup = true;\s+continue;/);
+  const projector = readFileSync(new URL("../node_modules/ponder/dist/esm/runtime/omnichain.js", import.meta.url), "utf8");
+  assert.match(projector, /arcReadyCheckpoint/);
+  assert.match(projector, /per-block realtime sync disabled/);
 });
 
 test("advancing 10,000 blocks only reads three boundary headers", async () => {
