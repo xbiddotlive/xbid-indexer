@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { numberToHex, pad, toEventSelector, zeroHash } from "viem";
-import { isArcRangeMode, waitForNextArcRange } from "../node_modules/ponder/dist/esm/runtime/arc-ranges.js";
+import { isArcRangeMode, waitForNextArcRange, withArcRangeCheckpoints } from "../node_modules/ponder/dist/esm/runtime/arc-ranges.js";
 import { createHistoricalSync } from "../node_modules/ponder/dist/esm/sync-historical/index.js";
 import { assertScopedLogRequest } from "../src/public-rpc";
 import { readFileSync, realpathSync } from "node:fs";
@@ -26,10 +26,20 @@ test("configured omnichain path cannot fall back to per-block realtime", () => {
   const historical = readFileSync(new URL("../node_modules/ponder/dist/esm/runtime/historical.js", import.meta.url), "utf8");
   const omnichain = historical.slice(historical.indexOf("export async function* getHistoricalEventsOmnichain"), historical.indexOf("export async function* getHistoricalEventsMultichain"));
   assert.match(omnichain, /await waitForNextArcRange/);
+  assert.match(omnichain, /withArcRangeCheckpoints\(eventGenerators\[0\]/);
   assert.match(omnichain, /isCatchup = true;\s+continue;/);
   const projector = readFileSync(new URL("../node_modules/ponder/dist/esm/runtime/omnichain.js", import.meta.url), "utf8");
   assert.match(projector, /arcReadyCheckpoint/);
   assert.match(projector, /per-block realtime sync disabled/);
+});
+
+test("single-chain projection retains empty range checkpoints and event batches", async () => {
+  const empty = { events: [], checkpoint: "100", blockRange: [1, 100] };
+  const populated = { events: [{ id: "xbid-event" }], checkpoint: "110", blockRange: [101, 110] };
+  async function* ranges() { yield empty; yield populated; }
+  const batches = [];
+  for await (const batch of withArcRangeCheckpoints(ranges(), 5042)) batches.push(batch);
+  assert.deepEqual(batches, [[{ ...empty, chainId: 5042 }], [{ ...populated, chainId: 5042 }]]);
 });
 
 test("actual Arc config explicitly selects the patched production ordering", async () => {
