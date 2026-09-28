@@ -1,5 +1,15 @@
 import { createTransport, http, type Transport } from "viem";
 
+export function assertScopedLogRequest(body: { method: string; params?: unknown }) {
+  if (body.method !== "eth_getLogs") return;
+  const filter = Array.isArray(body.params) ? body.params[0] : undefined;
+  const addresses = typeof filter?.address === "string" ? [filter.address] : filter?.address;
+  if (!Array.isArray(addresses) || addresses.length === 0 ||
+      !addresses.every((address) => typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address))) {
+    throw new Error("XBID refuses eth_getLogs without explicit contract addresses.");
+  }
+}
+
 /** Detect throttling without logging URLs, headers or RPC request parameters. */
 export function isRpcRateLimit(error: unknown): boolean {
   const seen = new Set<unknown>();
@@ -73,6 +83,7 @@ export function officialPublicRpc(url: string): Transport {
       type: "http",
       retryCount: 0,
       request: (async (body: Parameters<typeof transport.request>[0]) => {
+        assertScopedLogRequest(body);
         try {
           return await scheduler.run(() => {
             methods[body.method] = (methods[body.method] ?? 0) + 1;

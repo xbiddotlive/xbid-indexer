@@ -1,167 +1,300 @@
-diff --git a/dist/esm/sync-realtime/bloom.js b/dist/esm/sync-realtime/bloom.js
-index 1f6dc5723d2276692bb7df64f6d571ba0306926b..a40a760c2414f22c0e52b7e837e61250e9875426 100644
---- a/dist/esm/sync-realtime/bloom.js
-+++ b/dist/esm/sync-realtime/bloom.js
-@@ -23,7 +23,7 @@ export const isInBloom = (_bloom, input) => {
-  *
-  * Note: False positives are possible.
-  */
--export function isFilterInBloom({ block, filter, }) {
-+export function isFilterInBloom({ block, filter, childAddresses, }) {
-     // Return `false` for out of range blocks
-     if (hexToNumber(block.number) < getFilterFromBlock(filter) ||
-         hexToNumber(block.number) > getFilterToBlock(filter)) {
-@@ -57,7 +57,10 @@ export function isFilterInBloom({ block, filter, }) {
-             isInBloom(block.logsBloom, filter.address.eventSelector)) {
-             return true;
-         }
--        isAddressInBloom = true;
-+        const children = childAddresses?.get(filter.address.id);
-+        // Unknown coverage fails open; an explicitly empty map is safe to skip.
-+        isAddressInBloom = children === undefined ||
-+            Array.from(children.keys()).some((address) => isInBloom(block.logsBloom, address));
-     }
-     else if (Array.isArray(filter.address)) {
-         if (filter.address.length === 0) {
-diff --git a/dist/esm/sync-realtime/index.js b/dist/esm/sync-realtime/index.js
-index 7ef427f49fe1a3307fe0dcee12d0728ae1e5f4b7..7cb0928098950126c9b80c3f6213ded06b507019 100644
---- a/dist/esm/sync-realtime/index.js
-+++ b/dist/esm/sync-realtime/index.js
-@@ -152,9 +152,15 @@ export const createRealtimeSync = (args) => {
-         ////////
-         // "eth_getLogs" calls can be skipped if no filters match `newHeadBlock.logsBloom`.
-         // Async-execution chains can expose blocks before logsBloom is execution-ready.
-+        // Speculative heads, gaps and reorgs retain the fail-open path.
-+        const bloomParent = getLatestUnfinalizedBlock();
-+        const bloomChildAddresses = args.chain.id === 5042 &&
-+            maybeBlockHeader.parentHash === bloomParent.hash &&
-+            hexToNumber(maybeBlockHeader.number) === hexToNumber(bloomParent.number) + 1
-+            ? childAddresses : undefined;
-         const shouldRequestLogs = (isAsyncExecutionChain(args.chain.id) && logFilters.length > 0) ||
-             maybeBlockHeader.logsBloom === zeroLogsBloom ||
--            logFilters.some((filter) => isFilterInBloom({ block: maybeBlockHeader, filter }));
-+            logFilters.some((filter) => isFilterInBloom({ block: maybeBlockHeader, filter, childAddresses: bloomChildAddresses }));
-         let logs = [];
-         if (shouldRequestLogs) {
-             if (block === undefined) {
-@@ -730,7 +736,7 @@ export const createRealtimeSync = (args) => {
-                 logger: args.common.logger.child({
-                     action: "fetch_missing_blocks",
-                 }),
--            }).then((block) => fetchBlockEventData(block))));
-+            }).then((block) => args.chain.id === 5042 ? block : fetchBlockEventData(block))));
-             args.common.logger.debug({
-                 msg: "Fetched missing blocks",
-                 chain: args.chain.name,
-@@ -741,7 +747,9 @@ export const createRealtimeSync = (args) => {
-                 ]),
+diff --git a/dist/esm/runtime/arc-ranges.js b/dist/esm/runtime/arc-ranges.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..e4b0edb051fbc2e4d84755f5a3b62e0b20ca6987
+--- /dev/null
++++ b/dist/esm/runtime/arc-ranges.js
+@@ -0,0 +1,22 @@
++import { hexToNumber, numberToHex } from "viem";
++import { eth_getBlockByNumber } from "../rpc/actions.js";
++import { ShutdownError } from "../internal/errors.js";
++const isArcRangeMode = (chain) => chain.id === 5042 && process.env.PONDER_ARC_RANGE_MODE === "true";
++async function waitForNextArcRange({ common, chain, rpc, previous, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
++  while (!common.shutdown.isKilled) {
++    await sleep(Math.max(chain.pollingInterval, 5e3));
++    if (common.shutdown.isKilled) throw new ShutdownError();
++    const context = { logger: common.logger.child({ action: "poll_xbid_range" }) };
++    const latest = await eth_getBlockByNumber(rpc, ["latest", false], context);
++    const target = hexToNumber(latest.number) - chain.finalityBlockCount;
++    if (target <= hexToNumber(previous.number)) continue;
++    const anchor = await eth_getBlockByNumber(rpc, [previous.number, false], context);
++    if (anchor.hash !== previous.hash) throw new Error("Arc confirmed range boundary changed; indexing halted for recovery.");
++    return eth_getBlockByNumber(rpc, [numberToHex(target), false], context);
++  }
++  throw new ShutdownError();
++}
++export {
++  isArcRangeMode,
++  waitForNextArcRange
++};
+diff --git a/dist/esm/runtime/historical.js b/dist/esm/runtime/historical.js
+index aa453e461e0dcb99f9837cc29c1f51f35be159b5..72584879f5975de49d702f9d8c80d1152af03f29 100644
+--- a/dist/esm/runtime/historical.js
++++ b/dist/esm/runtime/historical.js
+@@ -14,6 +14,7 @@ import { promiseWithResolvers } from '../utils/promiseWithResolvers.js';
+ import { startClock } from '../utils/timer.js';
+ import { getRequiredIntervals, getRequiredIntervalsWithFilters, } from "./index.js";
+ import { getOmnichainCheckpoint } from "./omnichain.js";
++import { isArcRangeMode, waitForNextArcRange } from "./arc-ranges.js";
+ export async function* getHistoricalEventsOmnichain(params) {
+     let pendingEvents = [];
+     let isCatchup = false;
+@@ -389,6 +390,8 @@ export async function* getHistoricalEventsIsolated(params) {
+     let isCatchup = false;
+     let lastUnfinalizedRefetch = Date.now();
+     let cursor;
++    const arcRanges = isArcRangeMode(params.chain);
++    if (arcRanges && params.syncProgress.end !== undefined) throw new Error("Arc range mode requires an unbounded deployment.");
+     while (true) {
+         const rpc = params.indexingBuild.rpcs[params.indexingBuild.chains.findIndex((c) => c.id === params.chain.id)];
+         const eventCallbacks = params.indexingBuild.eventCallbacks[params.indexingBuild.chains.findIndex((c) => c.id === params.chain.id)];
+@@ -417,8 +420,11 @@ export async function* getHistoricalEventsIsolated(params) {
+                 chainId: decodeCheckpoint(cursor).chainId,
+                 blockNumber: decodeCheckpoint(cursor).blockNumber + 1n,
              });
-             for (const pendingBlock of pendingBlocks) {
--                yield* reconcileBlock(pendingBlock);
-+                // Reconcile registrations before filtering the next block.
-+                yield* reconcileBlock("block" in pendingBlock
-+                    ? pendingBlock : await fetchBlockEventData(pendingBlock));
-             }
-             if (hexToNumber(block.number) - hexToNumber(latestBlock.number) >
-                 MAX_QUEUED_BLOCKS) {
-diff --git a/dist/types/sync-realtime/bloom.d.ts b/dist/types/sync-realtime/bloom.d.ts
-index 9d9aa20d01ac0fbaacff291dbe4f7dc8b4e089eb..5f5a0265fbe0853cfe60e13f7fd496bf8eb81f0f 100644
---- a/dist/types/sync-realtime/bloom.d.ts
-+++ b/dist/types/sync-realtime/bloom.d.ts
-@@ -1,4 +1,4 @@
--import { type Hex } from "viem";
-+import { type Address, type Hex } from "viem";
- import type { LogFilter, SyncBlock } from '../internal/types.js';
- export declare const zeroLogsBloom = "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
- export declare const isInBloom: (_bloom: Hex, input: Hex) => boolean;
-@@ -11,8 +11,9 @@ export declare const isInBloom: (_bloom: Hex, input: Hex) => boolean;
-  *
-  * Note: False positives are possible.
-  */
--export declare function isFilterInBloom({ block, filter, }: {
-+export declare function isFilterInBloom({ block, filter, childAddresses, }: {
-     block: Pick<SyncBlock, "number" | "logsBloom">;
-     filter: LogFilter;
-+    childAddresses?: ReadonlyMap<string, ReadonlyMap<Address, number>>;
- }): boolean;
- //# sourceMappingURL=bloom.d.ts.map
-diff --git a/src/sync-realtime/bloom.ts b/src/sync-realtime/bloom.ts
-index 7b6895a2a55deb32c934c24dbcd9a6e533e23338..421fa05f1b564811965572d8c36ccd15991bc359 100644
---- a/src/sync-realtime/bloom.ts
-+++ b/src/sync-realtime/bloom.ts
-@@ -1,4 +1,4 @@
--import { type Hex, hexToBytes, hexToNumber, keccak256 } from "viem";
-+import { type Address, type Hex, hexToBytes, hexToNumber, keccak256 } from "viem";
- import type { LogFilter, SyncBlock } from "@/internal/types.js";
- import {
-   getFilterFromBlock,
-@@ -40,9 +40,12 @@ export const isInBloom = (_bloom: Hex, input: Hex): boolean => {
- export function isFilterInBloom({
-   block,
-   filter,
-+  childAddresses,
- }: {
-   block: Pick<SyncBlock, "number" | "logsBloom">;
-   filter: LogFilter;
-+  /** Only supply a complete child map through this block's canonical parent. */
-+  childAddresses?: ReadonlyMap<string, ReadonlyMap<Address, number>>;
- }): boolean {
-   // Return `false` for out of range blocks
-   if (
-@@ -84,7 +87,10 @@ export function isFilterInBloom({
-       return true;
+-            if (from > to)
+-                return;
++            if (from > to) {
++                if (!arcRanges) return;
++                params.syncProgress.finalized = await waitForNextArcRange({ common: params.common, chain: params.chain, rpc, previous: params.syncProgress.finalized });
++                continue;
++            }
+         }
+         params.common.logger.info({
+             msg: "Started backfill indexing",
+@@ -473,6 +479,11 @@ export async function* getHistoricalEventsIsolated(params) {
+             yield { chainId: params.chain.id, events, checkpoint, blockRange };
+         }
+         cursor = to;
++        if (arcRanges) {
++            params.syncProgress.finalized = await waitForNextArcRange({ common: params.common, chain: params.chain, rpc, previous: params.syncProgress.finalized });
++            isCatchup = true;
++            continue;
++        }
+         if (Date.now() - lastUnfinalizedRefetch < 30_000) {
+             break;
+         }
+diff --git a/dist/esm/runtime/isolated.js b/dist/esm/runtime/isolated.js
+index 17c7452ea4e7b1fb0313db9b1f3e3eba673b3e43..72137a9cb31c7ac99c996621afa938d20a5cbc99 100644
+--- a/dist/esm/runtime/isolated.js
++++ b/dist/esm/runtime/isolated.js
+@@ -16,6 +16,7 @@ import { startClock } from '../utils/timer.js';
+ import { getHistoricalEventsIsolated, refetchHistoricalEvents, } from "./historical.js";
+ import { getCachedIntervals, getChildAddresses, getLocalSyncProgress, } from "./index.js";
+ import { getRealtimeEventsIsolated } from "./realtime.js";
++import { isArcRangeMode } from "./arc-ranges.js";
+ export async function runIsolated({ common, preBuild, namespaceBuild, schemaBuild, indexingBuild, crashRecoveryCheckpoint, database, onReady, }) {
+     const chain = indexingBuild.chains[0];
+     const columnAccessPattern = createColumnAccessPattern({
+@@ -133,6 +134,8 @@ export async function runIsolated({ common, preBuild, namespaceBuild, schemaBuil
+         });
      }
+     const backfillEndClock = startClock();
++    const arcReadyCheckpoint = syncProgress.getCheckpoint({ tag: "finalized" });
++    let arcReady = false;
+     // Run historical indexing until complete.
+     for await (let { events, chainId, checkpoint, blockRange, } of recordAsyncGenerator(bufferAsyncGenerator(getHistoricalEventsIsolated({
+         common,
+@@ -245,6 +248,11 @@ export async function runIsolated({ common, preBuild, namespaceBuild, schemaBuil
+         cachedViemClient.clear();
+         common.metrics.ponder_historical_transform_duration.inc({ step: "commit" }, endClock());
+         await new Promise(setImmediate);
++        if (isArcRangeMode(chain) && !arcReady && checkpoint >= arcReadyCheckpoint) {
++            arcReady = true;
++            common.logger.info({ msg: "XBID address-scoped range indexing ready; per-block realtime sync disabled", chain_id: chain.id });
++            onReady();
++        }
+         common.logger.info({
+             msg: "Indexed block range",
+             chain: chain.name,
+diff --git a/dist/esm/sync-historical/index.js b/dist/esm/sync-historical/index.js
+index 18a8065d73aa3eee16ecad7bc85a5454fdf08661..18b7776483e7eab36ba1b831f9675a35aa1211fa 100644
+--- a/dist/esm/sync-historical/index.js
++++ b/dist/esm/sync-historical/index.js
+@@ -1,4 +1,5 @@
+ import { getLogsRetryHelper } from "@ponder/utils";
++import { isArcRangeMode } from "../runtime/arc-ranges.js";
+ import { hexToNumber, numberToHex, toHex, zeroHash, } from "viem";
+ import { debug_traceBlockByNumber, eth_getBlockByNumber, eth_getBlockReceipts, eth_getLogs, eth_getTransactionReceipt, validateLogsAndBlock, validateReceiptsAndBlock, validateTracesAndBlock, validateTransactionsAndBlock, } from '../rpc/actions.js';
+ import { getChildAddress, isAddressFactory, isAddressMatched, isBlockFilterMatched, isBlockInFilter, isLogFactoryMatched, isLogFilterMatched, isTraceFilterMatched, isTransactionFilterMatched, isTransferFilterMatched, mergeLogFiltersToRequests, } from '../runtime/filter.js';
+@@ -226,7 +227,7 @@ export const createHistoricalSync = (args) => {
+             await Promise.all(requiredFactoryIntervals.map(async ({ factory, interval }) => {
+                 childAddresses.set(factory.id, await syncAddressFactory(factory, interval, context));
+             }));
+-            const ethGetLogsRequests = mergeLogFiltersToRequests(requiredIntervals, args.childAddresses, args.common.options.factoryAddressCountThreshold);
++            const ethGetLogsRequests = mergeLogFiltersToRequests(requiredIntervals, args.childAddresses, isArcRangeMode(args.chain) ? Number.MAX_SAFE_INTEGER : args.common.options.factoryAddressCountThreshold);
+             let logs = [];
+             await Promise.all(ethGetLogsRequests.map(async (request) => {
+                 const _logs = await syncLogsDynamic(request.params[0], context);
+@@ -555,7 +556,13 @@ export const createHistoricalSync = (args) => {
+                     concurrency: MAX_BLOCKS_IN_MEM,
+                     worker: syncBlockData,
+                 });
+-                await Promise.all(intervalRange(interval).map((blockNumber) => queue.add(blockNumber)));
++                const blockNumbers = isArcRangeMode(args.chain)
++                    ? (() => {
++                        if (requiredIntervals.some(({ filter }) => filter.type !== "log")) throw new Error("Arc range mode only accepts contract log filters.");
++                        return Array.from(perBlockLogs.keys());
++                    })()
++                    : intervalRange(interval);
++                await Promise.all(blockNumbers.map((blockNumber) => queue.add(blockNumber)));
+             }
+             args.common.logger.debug({
+                 msg: "Fetched block data",
+diff --git a/src/runtime/arc-ranges.ts b/src/runtime/arc-ranges.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd9d8dd7a9776f9e6ce189462b90043dec1cd109
+--- /dev/null
++++ b/src/runtime/arc-ranges.ts
+@@ -0,0 +1,34 @@
++import { hexToNumber, numberToHex } from "viem";
++import type { Common } from "../internal/common.js";
++import type { Chain, LightBlock } from "../internal/types.js";
++import type { Rpc } from "../rpc/index.js";
++import { eth_getBlockByNumber } from "../rpc/actions.js";
++import { ShutdownError } from "../internal/errors.js";
++
++export const isArcRangeMode = (chain: Pick<Chain, "id">) =>
++  chain.id === 5042 && process.env.PONDER_ARC_RANGE_MODE === "true";
++
++/** Poll range boundaries, never each intervening block. Only confirmed ranges
++ * are passed to the existing historical log/projector transaction pipeline. */
++export async function waitForNextArcRange({ common, chain, rpc, previous, sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)) }: {
++  common: Pick<Common, "shutdown" | "logger">;
++  chain: Pick<Chain, "pollingInterval" | "finalityBlockCount">;
++  rpc: Rpc;
++  previous: LightBlock;
++  sleep?: (ms: number) => Promise<void>;
++}): Promise<LightBlock> {
++  while (!common.shutdown.isKilled) {
++    await sleep(Math.max(chain.pollingInterval, 5_000));
++    if (common.shutdown.isKilled) throw new ShutdownError();
++    const context = { logger: common.logger.child({ action: "poll_xbid_range" }) };
++    const latest = await eth_getBlockByNumber(rpc, ["latest", false], context);
++    const target = hexToNumber(latest.number) - chain.finalityBlockCount;
++    if (target <= hexToNumber(previous.number)) continue;
++    // A changed confirmed boundary is an integrity error, not permission to
++    // advance the cursor or silently serve a fabricated empty range.
++    const anchor = await eth_getBlockByNumber(rpc, [previous.number, false], context);
++    if (anchor.hash !== previous.hash) throw new Error("Arc confirmed range boundary changed; indexing halted for recovery.");
++    return eth_getBlockByNumber(rpc, [numberToHex(target), false], context);
++  }
++  throw new ShutdownError();
++}
+diff --git a/src/runtime/historical.ts b/src/runtime/historical.ts
+index 87ea9aac20913b6874d6a96e210bb8346578f5e7..78529a917a4657edaba4724eaf5e380e2172f7a3 100644
+--- a/src/runtime/historical.ts
++++ b/src/runtime/historical.ts
+@@ -42,6 +42,7 @@ import {
+   type SyncProgress,
+ } from "./index.js";
+ import { getOmnichainCheckpoint } from "./omnichain.js";
++import { isArcRangeMode, waitForNextArcRange } from "./arc-ranges.js";
  
--    isAddressInBloom = true;
-+    const children = childAddresses?.get(filter.address.id);
-+    // Unknown coverage fails open; an explicitly empty map is safe to skip.
-+    isAddressInBloom = children === undefined ||
-+      Array.from(children.keys()).some((address) => isInBloom(block.logsBloom, address));
-   } else if (Array.isArray(filter.address)) {
-     if (filter.address.length === 0) {
-       isAddressInBloom = true;
-diff --git a/src/sync-realtime/index.ts b/src/sync-realtime/index.ts
-index df6c33cd8c53fa49089b88c80c4490a50842b388..7d5025847ee96762cd213841e49441a14809eb00 100644
---- a/src/sync-realtime/index.ts
-+++ b/src/sync-realtime/index.ts
-@@ -302,11 +302,18 @@ export const createRealtimeSync = (
+ export async function* getHistoricalEventsOmnichain(params: {
+   common: Common;
+@@ -654,6 +655,8 @@ export async function* getHistoricalEventsIsolated(params: {
+   let isCatchup = false;
+   let lastUnfinalizedRefetch = Date.now();
+   let cursor: string | undefined;
++  const arcRanges = isArcRangeMode(params.chain);
++  if (arcRanges && params.syncProgress.end !== undefined) throw new Error("Arc range mode requires an unbounded deployment.");
  
-     // "eth_getLogs" calls can be skipped if no filters match `newHeadBlock.logsBloom`.
-     // Async-execution chains can expose blocks before logsBloom is execution-ready.
-+    // Only use child addresses after reconciling the exact parent. Speculative
-+    // heads, gaps and reorgs must retain the original topic-only (fail-open) path.
-+    const bloomParent = getLatestUnfinalizedBlock();
-+    const bloomChildAddresses = args.chain.id === 5042 &&
-+      maybeBlockHeader.parentHash === bloomParent.hash &&
-+      hexToNumber(maybeBlockHeader.number) === hexToNumber(bloomParent.number) + 1
-+      ? childAddresses : undefined;
-     const shouldRequestLogs =
-       (isAsyncExecutionChain(args.chain.id) && logFilters.length > 0) ||
-       maybeBlockHeader.logsBloom === zeroLogsBloom ||
-       logFilters.some((filter) =>
--        isFilterInBloom({ block: maybeBlockHeader, filter }),
-+        isFilterInBloom({ block: maybeBlockHeader, filter, childAddresses: bloomChildAddresses }),
-       );
- 
-     let logs: SyncLog[] = [];
-@@ -1053,7 +1060,7 @@ export const createRealtimeSync = (
-             logger: args.common.logger.child({
-               action: "fetch_missing_blocks",
-             }),
--          }).then((block) => fetchBlockEventData(block)),
-+          }).then((block) => args.chain.id === 5042 ? block : fetchBlockEventData(block)),
-         ),
-       );
- 
-@@ -1071,7 +1078,10 @@ export const createRealtimeSync = (
+   while (true) {
+     const rpc =
+@@ -699,7 +702,13 @@ export async function* getHistoricalEventsIsolated(params: {
+         blockNumber: decodeCheckpoint(cursor!).blockNumber + 1n,
        });
  
-       for (const pendingBlock of pendingBlocks) {
--        yield* reconcileBlock(pendingBlock);
-+        // Arc: reconcile registrations before filtering the next block. Never
-+        // bloom-filter a whole prefetched batch against a stale factory map.
-+        yield* reconcileBlock("block" in pendingBlock
-+          ? pendingBlock : await fetchBlockEventData(pendingBlock));
+-      if (from > to) return;
++      if (from > to) {
++        if (!arcRanges) return;
++        params.syncProgress.finalized = await waitForNextArcRange({
++          common: params.common, chain: params.chain, rpc, previous: params.syncProgress.finalized,
++        });
++        continue;
++      }
+     }
+ 
+     params.common.logger.info({
+@@ -784,6 +793,14 @@ export async function* getHistoricalEventsIsolated(params: {
+ 
+     cursor = to;
+ 
++    if (arcRanges) {
++      params.syncProgress.finalized = await waitForNextArcRange({
++        common: params.common, chain: params.chain, rpc, previous: params.syncProgress.finalized,
++      });
++      isCatchup = true;
++      continue;
++    }
++
+     if (Date.now() - lastUnfinalizedRefetch < 30_000) {
+       break;
+     }
+diff --git a/src/runtime/isolated.ts b/src/runtime/isolated.ts
+index d9cd1c3f952d8b9bcded1d2d3306fc2a6af509a2..38843132b2947633f65d11f10fe9c7914cd5501b 100644
+--- a/src/runtime/isolated.ts
++++ b/src/runtime/isolated.ts
+@@ -57,6 +57,7 @@ import {
+   getLocalSyncProgress,
+ } from "./index.js";
+ import { getRealtimeEventsIsolated } from "./realtime.js";
++import { isArcRangeMode } from "./arc-ranges.js";
+ 
+ export async function runIsolated({
+   common,
+@@ -257,6 +258,8 @@ export async function runIsolated({
+   }
+ 
+   const backfillEndClock = startClock();
++  const arcReadyCheckpoint = syncProgress.getCheckpoint({ tag: "finalized" });
++  let arcReady = false;
+ 
+   // Run historical indexing until complete.
+   for await (let {
+@@ -451,6 +454,12 @@ export async function runIsolated({
+ 
+     await new Promise(setImmediate);
+ 
++    if (isArcRangeMode(chain) && !arcReady && checkpoint >= arcReadyCheckpoint) {
++      arcReady = true;
++      common.logger.info({ msg: "XBID address-scoped range indexing ready; per-block realtime sync disabled", chain_id: chain.id });
++      onReady();
++    }
++
+     common.logger.info({
+       msg: "Indexed block range",
+       chain: chain.name,
+diff --git a/src/sync-historical/index.ts b/src/sync-historical/index.ts
+index e9b9b8a614f5d1c56d6dd2827c34a6c6d435074b..85af122fbc4026269b7fd9a0a801763a78211322 100644
+--- a/src/sync-historical/index.ts
++++ b/src/sync-historical/index.ts
+@@ -1,4 +1,5 @@
+ import { getLogsRetryHelper } from "@ponder/utils";
++import { isArcRangeMode } from "../runtime/arc-ranges.js";
+ import {
+   type Address,
+   type Hash,
+@@ -427,7 +428,7 @@ export const createHistoricalSync = (
+       const ethGetLogsRequests = mergeLogFiltersToRequests(
+         requiredIntervals,
+         args.childAddresses,
+-        args.common.options.factoryAddressCountThreshold,
++        isArcRangeMode(args.chain) ? Number.MAX_SAFE_INTEGER : args.common.options.factoryAddressCountThreshold,
+       );
+ 
+       let logs: SyncLog[] = [];
+@@ -892,7 +893,12 @@ export const createHistoricalSync = (
+         });
+ 
+         await Promise.all(
+-          intervalRange(interval).map((blockNumber) => queue.add(blockNumber)),
++          (isArcRangeMode(args.chain)
++            ? (() => {
++                if (requiredIntervals.some(({ filter }) => filter.type !== "log")) throw new Error("Arc range mode only accepts contract log filters.");
++                return Array.from(perBlockLogs.keys());
++              })()
++            : intervalRange(interval)).map((blockNumber) => queue.add(blockNumber)),
+         );
        }
  
-       if (

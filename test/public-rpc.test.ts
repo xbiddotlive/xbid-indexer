@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createRpcScheduler, isRpcRateLimit } from "../src/public-rpc";
+import { assertScopedLogRequest, createRpcScheduler, isRpcRateLimit } from "../src/public-rpc";
 
 function fixture() {
   let time = 0;
@@ -42,4 +42,12 @@ test("recognizes nested viem throttling errors and handles circular causes", () 
   const circular: { cause?: unknown } = {}; circular.cause = circular;
   assert.equal(isRpcRateLimit(circular), false);
   assert.equal(isRpcRateLimit(new Error("invalid params")), false);
+});
+
+test("unscoped log requests fail closed before reaching the public RPC", () => {
+  for (const address of [undefined, [], "invalid", ["invalid"]]) {
+    assert.throws(() => assertScopedLogRequest({ method: "eth_getLogs", params: [{ address }] }), /explicit contract addresses/);
+  }
+  assert.doesNotThrow(() => assertScopedLogRequest({ method: "eth_getLogs", params: [{ address: "0x1111111111111111111111111111111111111111" }] }));
+  assert.doesNotThrow(() => assertScopedLogRequest({ method: "eth_blockNumber" }));
 });
